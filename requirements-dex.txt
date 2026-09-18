@@ -1,0 +1,17 @@
+# DEX Execution Dependencies
+# Install with: pip install -r requirements-dex.txt
+
+# Solana
+solders>=0.18.0
+anchorpy>=0.19.0  # Optional: for Anchor programs
+
+# EVM
+web3>=6.20.0
+eth-account>=0.10.0
+
+# HTTP
+aiohttp>=3.9.0
+
+# Optional: Better RPC providers
+# helius-sdk>=0.1.0  # For Helius RPC
+# quicknode-sdk>=0.1.0  # For QuickNode

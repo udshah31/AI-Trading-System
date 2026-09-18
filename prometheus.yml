@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'trading-system'
+    environment: 'production'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # Dashboard / FastAPI app
+  - job_name: 'dashboard'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/metrics'
+
+  # Redis exporter (if running)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['host.docker.internal:9121']
+
+  # Postgres exporter (if running)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['host.docker.internal:9187']
+
+  # Node exporter (host metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+
+  # Kafka exporter (if using Kafka)
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['host.docker.internal:7078']

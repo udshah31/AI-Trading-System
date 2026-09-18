@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy and install dependencies
+COPY requirements.txt requirements-dex.txt ./
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-dex.txt
+
+# Install TradingAgents in development mode
+COPY TradingAgents/ ./TradingAgents/
+RUN pip install --no-cache-dir -e ./TradingAgents
+
+# Copy hybrid module
+COPY hybrid/ ./hybrid/
+
+# Set Python path
+ENV PYTHONPATH=/app:/app/TradingAgents
+
+# Default command (overridden by docker-compose)
+CMD ["python", "-m", "hybrid.main_async"]

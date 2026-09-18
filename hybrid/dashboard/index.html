@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trading System — Live Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://unpkg.com/mermaid@10/dist/mermaid.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --ink: #0A0E14;
+            --paper: #E8ECEF;
+            --muted: #6B7A8D;
+            --signal: #00D4AA;
+            --alert: #FF4D6A;
+            --warning: #F5A623;
+            --border: #D0D8E0;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --ink: #E8ECEF;
+                --paper: #0A0E14;
+                --muted: #8A9BB0;
+                --signal: #00D4AA;
+                --alert: #FF6B85;
+                --warning: #F5B74A;
+                --border: #3A4550;
+            }
+        }
+
+        html, body { height: 100%; }
+
+        body {
+            font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--paper);
+            color: var(--ink);
+            font-size: 14px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .mono { font-family: 'IBM Plex Mono', 'SF Mono', 'Fira Code', monospace; font-variant-numeric: tabular-nums; }
+
+        a { color: inherit; text-decoration: none; }
+
+        /* Layout */
+        .app { display: grid; grid-template-rows: auto auto 1fr; min-height: 100vh; }
+        .hero { padding: 24px 32px 16px; background: var(--ink); color: var(--paper); }
+        .hero-inner { max-width: 1600px; margin: 0 auto; }
+
+        .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
+        .kpi { padding: 16px 20px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); }
+        .kpi-label { font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+        .kpi-value { font-family: 'IBM Plex Sans', sans-serif; font-size: 28px; font-weight: 600; line-height: 1.1; }
+        .kpi-delta { font-size: 11px; font-weight: 500; letter-spacing: 0.02em; margin-top: 4px; }
+        .kpi-delta.pos { color: var(--signal); }
+        .kpi-delta.neg { color: var(--alert); }
+        .kpi-delta.warn { color: var(--warning); }
+
+        .equity-curve { max-width: 1600px; margin: 24px auto 0; padding: 0 32px; height: 200px; }
+        .equity-curve canvas { width: 100%; height: 100%; }
+
+        .main { display: grid; grid-template-columns: 280px 1fr; gap: 24px; max-width: 1600px; margin: 24px auto 32px; padding: 0 32px; }
+
+        .strategies-panel { padding: 16px; background: var(--paper); border: 1px solid var(--border); }
+        .strategies-panel h2 { font-size: 14px; font-weight: 500; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+        .strategy-item { padding: 12px 12px; margin-bottom: 8px; border: 1px solid var(--border); transition: border-color 0.15s; }
+        .strategy-item:hover { border-color: var(--muted); }
+        .strategy-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .strategy-name { font-weight: 500; font-size: 14px; }
+        .strategy-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+        .strategy-status { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; }
+        .status-active { background: rgba(0,212,170,0.15); color: var(--signal); border: 1px solid rgba(0,212,170,0.3); }
+        .status-standby { background: rgba(245,166,35,0.15); color: var(--warning); border: 1px solid rgba(245,166,35,0.3); }
+        .status-training { background: rgba(107,122,141,0.15); color: var(--muted); border: 1px solid rgba(107,122,141,0.3); }
+        .strategy-params { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; }
+        .param { display: flex; flex-direction: column; gap: 2px; }
+        .param-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+        .param-value { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; }
+
+        .right-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+        .positions-table, .trades-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .positions-table th, .trades-table th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+        .positions-table td, .trades-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .positions-table tbody tr:last-child td, .trades-table tbody tr:last-child td { border-bottom: none; }
+        .positions-table tbody tr:hover td, .trades-table tbody tr:hover td { background: rgba(0,0,0,0.02); }
+        @media (prefers-color-scheme: dark) {
+            .positions-table tbody tr:hover td, .trades-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+        }
+        .positions-table td.num, .trades-table td.num { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+        .side-long { color: var(--signal); }
+        .side-short { color: var(--alert); }
+        .pnl-pos { color: var(--signal); }
+        .pnl-neg { color: var(--alert); }
+
+        .agents-list { display: flex; flex-direction: column; gap: 8px; }
+        .agent-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--border); font-size: 13px; }
+        .agent-row:hover { border-color: var(--muted); }
+        .agent-name { font-weight: 500; }
+        .agent-status { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .status-dot.connected { background: var(--signal); }
+        .status-dot.disconnected { background: var(--muted); }
+        .agent-last { font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+
+        .equity-chart-wrapper { background: var(--paper); border: 1px solid var(--border); border-radius: 0; padding: 16px; height: 220px; }
+        .equity-chart-wrapper canvas { width: 100%; height: 100%; }
+
+        .section-title { font-size: 14px; font-weight: 500; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+        .signals-list { display: flex; flex-direction: column; gap: 8px; }
+        .signal-row { display: grid; grid-template-columns: 80px 1fr auto auto; gap: 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--border); font-size: 13px; }
+        .signal-row:hover { border-color: var(--muted); }
+        .signal-symbol { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 12px; }
+        .signal-agent { font-size: 11px; color: var(--muted); }
+        .signal-action { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; }
+        .action-buy { background: rgba(0,212,170,0.15); color: var(--signal); border: 1px solid rgba(0,212,170,0.3); }
+        .action-sell { background: rgba(255,77,106,0.15); color: var(--alert); border: 1px solid rgba(255,77,106,0.3); }
+        .action-hold { background: rgba(107,122,141,0.15); color: var(--muted); border: 1px solid rgba(107,122,141,0.3); }
+        .signal-conf { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); text-align: right; }
+
+        .logs-container { font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.6; max-height: 300px; overflow-y: auto; padding: 12px; background: var(--paper); border: 1px solid var(--border); }
+        .log-entry { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); white-space: pre-wrap; }
+        .log-entry:last-child { border-bottom: none; }
+        .log-time { color: var(--muted); white-space: nowrap; }
+        .log-source { color: var(--muted); white-space: nowrap; }
+        .log-msg { color: var(--ink); flex: 1; }
+        .log-entry.info .log-source { color: var(--signal); }
+        .log-entry.warn .log-source { color: var(--warning); }
+        .log-entry.error .log-source { color: var(--alert); }
+        .log-entry.success .log-source { color: var(--signal); }
+
+        .mermaid { font-family: 'IBM Plex Sans', sans-serif; }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .main { grid-template-columns: 1fr; }
+            .strategies-panel { order: 2; }
+            .right-panel { order: 1; }
+            .hero { padding: 16px 20px 8px; }
+            .equity-curve { padding: 0 20px; }
+            .main { padding: 0 20px; gap: 16px; }
+            .kpi-row { grid-template-columns: 1fr; }
+        }
+
+        /* Accessibility */
+        @media (prefers-reduced-motion: reduce) {
+            * { animation: none !important; transition: none !important; }
+        }
+        :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--paper); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- HERO -->
+        <header class="hero" role="banner">
+            <div class="hero-inner">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                    <div>
+                        <h1 style="font-size:24px;font-weight:600;letter-spacing:-0.02em;">AI Trading System</h1>
+                        <p style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Paper Trading • Live Monitor</p>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:16px;font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace;">
+                        <span id="connectionStatus" style="display:flex;align-items:center;gap:6px;">
+                            <span class="status-dot disconnected" style="width:8px;height:8px;border-radius:50%;"></span>
+                            <span>Disconnected</span>
+                        </span>
+                        <span id="lastUpdate" style="font-variant-numeric:tabular-nums;">--:--:--</span>
+                    </div>
+                </div>
+
+                <div class="kpi-row">
+                    <article class="kpi">
+                        <div class="kpi-label">Equity</div>
+                        <div class="kpi-value mono" id="kpiEquity">$100,000.00</div>
+                        <div class="kpi-delta pos mono" id="kpiEquityDelta">+0.00%</div>
+                    </article>
+                    <article class="kpi">
+                        <div class="kpi-label">Daily P&L</div>
+                        <div class="kpi-value mono" id="kpiPnl" style="color:var(--signal);">$0.00</div>
+                        <div class="kpi-delta pos mono" id="kpiPnlDelta">+0.00%</div>
+                    </article>
+                    <article class="kpi">
+                        <div class="kpi-label">Open Positions</div>
+                        <div class="kpi-value mono" id="kpiPositions">0</div>
+                        <div class="kpi-delta mono" id="kpiExposure">$0 exp</div>
+                    </article>
+                    <article class="kpi">
+                        <div class="kpi-label">Drawdown</div>
+                        <div class="kpi-value mono" id="riskDrawdown" style="color:var(--alert);">0.00%</div>
+                        <div class="kpi-delta mono" id="riskDrawdownDelta">Limit: 15%</div>
+                    </article>
+                    <article class="kpi">
+                        <div class="kpi-label">Margin Used</div>
+                        <div class="kpi-value mono" id="riskMargin" style="color:var(--warning);">0%</div>
+                        <div class="kpi-delta mono" id="riskMarginDelta">Limit: 20%</div>
+                    </article>
+                    <article class="kpi">
+                        <div class="kpi-label">Risk Budget</div>
+                        <div class="kpi-value mono" id="riskBudget" style="color:var(--signal);">$0</div>
+                        <div class="kpi-delta mono" id="riskBudgetDelta">Per trade: 2%</div>
+                    </article>
+                </div>
+                <div id="circuitBreaker" style="display:none;margin-top:12px;padding:8px 16px;background:rgba(255,77,106,0.15);border:1px solid var(--alert);color:var(--alert);font-weight:600;font-size:12px;text-align:center;">
+                    ⚠ CIRCUIT BREAKER ACTIVE — Drawdown limit exceeded
+                </div>
+            </div>
+        </header>
+
+        <!-- EQUITY CURVE -->
+        <section class="equity-curve-wrapper equity-chart-wrapper" aria-label="Equity curve">
+            <canvas id="equityChart" role="img" aria-label="30-day equity curve"></canvas>
+        </section>
+
+        <!-- MAIN GRID -->
+        <main class="main" role="main">
+            <!-- LEFT: STRATEGIES -->
+            <aside class="strategies-panel" aria-label="Strategies">
+                <h2 class="section-title">Strategies</h2>
+                <div id="strategiesList"></div>
+            </aside>
+
+            <!-- RIGHT: POSITIONS / TRADES / AGENTS -->
+            <section class="right-panel">
+                <!-- POSITIONS -->
+                <section>
+                    <h2 class="section-title">Positions</h2>
+                    <table class="positions-table mono" role="grid">
+                        <thead>
+                            <tr>
+                                <th scope="col">Symbol</th>
+                                <th scope="col">Strategy</th>
+                                <th scope="col">Side</th>
+                                <th scope="col" class="num">Volume</th>
+                                <th scope="col" class="num">Entry</th>
+                                <th scope="col" class="num">Current</th>
+                                <th scope="col" class="num">P&L</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsBody">
+                            <tr><td colspan="7" style="padding:32px;text-align:center;color:var(--muted);">No open positions</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <!-- TRADES -->
+                <section>
+                    <h2 class="section-title">Recent Trades</h2>
+                    <table class="trades-table mono" role="grid">
+                        <thead>
+                            <tr>
+                                <th scope="col">Time</th>
+                                <th scope="col">Symbol</th>
+                                <th scope="col">Side</th>
+                                <th scope="col" class="num">Volume</th>
+                                <th scope="col" class="num">Price</th>
+                                <th scope="col" class="num">P&L</th>
+                                <th scope="col">Strategy</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradesBody">
+                            <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted);">No trades</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <!-- AGENTS -->
+                <section>
+                    <h2 class="section-title">Agents</h2>
+                    <div class="agents-list" id="agentsList">
+                        <div style="padding:12px;color:var(--muted);text-align:center;font-size:13px;">Loading agents...</div>
+                    </div>
+                </section>
+            </section>
+        </main>
+
+        <!-- SNIPER ALERTS (full width, below main) -->
+        <section style="max-width:1600px;margin:0 auto;padding:0 32px 16px;">
+            <h2 class="section-title">Sniper Alerts</h2>
+            <div class="signals-list" id="sniperAlerts">
+                <div style="padding:12px;color:var(--muted);text-align:center;font-size:13px;">No sniper alerts</div>
+            </div>
+        </section>
+
+        <!-- FOOTER LOGS (full width, below main) -->
+        <section style="max-width:1600px;margin:0 auto;padding:0 32px 32px;">
+            <h2 class="section-title">System Logs</h2>
+            <div class="logs-container" id="logsContainer">
+                <div class="log-entry info"><span class="log-time">[--:--:--]</span><span class="log-source">[System]</span><span class="log-msg">Waiting for connection...</span></div>
+            </div>
+        </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://unpkg.com/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        // ============ CONFIG ============
+        const WS_URL = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+        const API_BASE = '';
+        const RECONNECT_MAX = 10;
+
+        // ============ STATE ============
+        let ws = null;
+        let equityChart = null;
+        let equityData = { labels: [], datasets: [] };
+        let reconnectAttempts = 0;
+
+        // ============ UTIL ============
+        const $ = (sel) => document.querySelector(sel);
+        const $$ = (sel) => document.querySelectorAll(sel);
+        const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+        const fmtPct = (n) => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+        const fmtNum = (n, d = 4) => Number(n).toFixed(d);
+        const nowStr = () => new Date().toLocaleTimeString();
+
+        const theme = {
+            ink: getComputedStyle(document.documentElement).getPropertyValue('--ink').trim(),
+            paper: getComputedStyle(document.documentElement).getPropertyValue('--paper').trim(),
+            muted: getComputedStyle(document.documentElement).getPropertyValue('--muted').trim(),
+            signal: getComputedStyle(document.documentElement).getPropertyValue('--signal').trim(),
+            alert: getComputedStyle(document.documentElement).getPropertyValue('--alert').trim(),
+            warning: getComputedStyle(document.documentElement).getPropertyValue('--warning').trim(),
+            border: getComputedStyle(document.documentElement).getPropertyValue('--border').trim(),
+        };
+
+        // ============ MERMAID ============
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#0A0E14',
+                primaryTextColor: '#E8ECEF',
+                primaryBorderColor: '#D0D8E0',
+                lineColor: '#6B7A8D',
+                secondaryColor: '#E8ECEF',
+                tertiaryColor: '#0A0E14',
+                background: '#E8ECEF',
+                fontFamily: "'IBM Plex Sans', sans-serif",
+                fontSize: '12px',
+            }
+        });
+
+        // ============ EQUITY CHART ============
+        function initEquityChart() {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            equityChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'Equity', data: [], borderColor: theme.signal, backgroundColor: 'rgba(0,212,170,0.08)', borderWidth: 2, tension: 0.2, pointRadius: 0, fill: true }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    plugins: { legend: { display: false }, tooltip: { enabled: true, backgroundColor: '#0A0E14', titleColor: '#E8ECEF', bodyColor: '#E8ECEF', borderColor: '#D0D8E0', borderWidth: 1, padding: 12, displayColors: false, callbacks: { label: (ctx) => '$' + ctx.parsed.y.toLocaleString() } } },
+                    scales: {
+                        x: { display: false },
+                        y: { display: false, grid: { display: false } }
+                    },
+                    animation: { duration: 300 },
+                    elements: { line: { borderWidth: 2 } }
+                }
+            });
+        }
+
+        function updateEquityChart(data) {
+            if (!equityChart) return;
+            if (data && data.labels && data.data) {
+                equityChart.data.labels = data.labels;
+                equityChart.data.datasets[0].data = data.data;
+            } else if (equityData.labels.length) {
+                equityChart.data.labels = equityData.labels;
+                equityChart.data.datasets[0].data = equityData.datasets[0].data;
+            }
+            equityChart.update('none');
+        }
+
+        // ============ DOM REFS ============
+        const els = {
+            connStatus: document.getElementById('connectionStatus'),
+            lastUpdate: document.getElementById('lastUpdate'),
+            kpiEquity: document.getElementById('kpiEquity'),
+            kpiEquityDelta: document.getElementById('kpiEquityDelta'),
+            kpiPnl: document.getElementById('kpiPnl'),
+            kpiPnlDelta: document.getElementById('kpiPnlDelta'),
+            kpiPositions: document.getElementById('kpiPositions'),
+            kpiExposure: document.getElementById('kpiExposure'),
+            positionsBody: document.getElementById('positionsBody'),
+            tradesBody: document.getElementById('tradesBody'),
+            agentsList: document.getElementById('agentsList'),
+            strategiesList: document.getElementById('strategiesList'),
+            logsContainer: document.getElementById('logsContainer'),
+        };
+
+        // ============ WS ============
+        function connect() {
+            ws = new WebSocket(WS_URL);
+            ws.onopen = () => { setConnStatus(true); reconnectAttempts = 0; };
+            ws.onmessage = (e) => { handleMsg(JSON.parse(e.data)); };
+            ws.onclose = () => { setConnStatus(false); scheduleReconnect(); };
+            ws.onerror = () => {};
+        }
+        function scheduleReconnect() {
+            if (reconnectAttempts < RECONNECT_MAX) {
+                const delay = Math.min(1000 * Math.pow(2, reconnectAttempts++), 30000);
+                setTimeout(connect, delay);
+            }
+        }
+
+        function setConnStatus(connected) {
+            const dot = els.connStatus.querySelector('.status-dot') || document.createElement('span');
+            dot.className = 'status-dot ' + (connected ? 'connected' : 'disconnected');
+            dot.style.cssText = 'width:8px;height:8px;border-radius:50%;' + (connected ? 'background:var(--signal)' : 'background:var(--muted)');
+            els.connStatus.innerHTML = '';
+            els.connStatus.appendChild(dot);
+            els.connStatus.append(' ' + (connected ? 'Connected' : 'Disconnected'));
+        }
+
+        function handleMsg(msg) {
+            switch (msg.type) {
+                case 'initial': renderPositions(msg.data.positions || []); if (msg.data.equity) updateEquityDisplay(msg.data.equity); break;
+                case 'metrics_update': updateMetrics(msg.data); break;
+                case 'equity_history': equityData = msg.data; updateEquityChart(msg.data); break;
+                case 'positions': renderPositions(msg.data); break;
+                case 'trades': renderTrades(msg.data); break;
+                case 'signals': renderSignals(msg.data); break;
+                case 'agents': renderAgents(msg.data); break;
+                case 'strategies': renderStrategies(msg.data); break;
+                case 'log': addLog(msg.data); break;
+                case 'strategy_update': updateStrategyCard(msg.data); break;
+                case 'risk_update': updateRiskPanel(msg.data); break;
+                case 'sniper_alert': addSniperAlert(msg.data); break;
+            }
+        }
+
+        // ============ RENDERERS ============
+        function updateMetrics(data) {
+            const eq = data.total_equity ?? 0;
+            const pnl = data.daily_pnl ?? 0;
+            const pos = data.open_positions ?? 0;
+            const exp = data.exposure ?? 0;
+            const eqDelta = data.equity_delta_pct ?? 0;
+            const pnlDelta = data.pnl_delta_pct ?? 0;
+
+            els.kpiEquity.textContent = fmt(eq);
+            els.kpiEquityDelta.textContent = fmtPct(eqDelta);
+            els.kpiEquityDelta.className = 'kpi-delta mono ' + (eqDelta >= 0 ? 'pos' : 'neg');
+
+            els.kpiPnl.textContent = fmt(pnl);
+            els.kpiPnl.style.color = pnl >= 0 ? 'var(--signal)' : 'var(--alert)';
+            els.kpiPnlDelta.textContent = fmtPct(pnlDelta);
+            els.kpiPnlDelta.className = 'kpi-delta mono ' + (pnlDelta >= 0 ? 'pos' : 'neg');
+
+            els.kpiPositions.textContent = pos;
+            els.kpiExposure.textContent = fmt(exp);
+        }
+
+        function updateEquityDisplay(equity) {
+            if (equity && equity.labels && equity.data) {
+                equityData = equity;
+                updateEquityChart(equity);
+            }
+        }
+
+        function renderPositions(list) {
+            const tb = els.positionsBody;
+            if (!list.length) {
+                tb.innerHTML = '<tr><td colspan="7" style="padding:32px;text-align:center;color:var(--muted);">No open positions</td></tr>';
+                return;
+            }
+            tb.innerHTML = list.map(p => `
+                <tr>
+                    <td class="mono">${p.symbol}</td>
+                    <td>${p.strategy}</td>
+                    <td><span class="side-${p.side}">${p.side.toUpperCase()}</span></td>
+                    <td class="num mono">${fmtNum(p.volume)}</td>
+                    <td class="num mono">${fmt(p.entry_price)}</td>
+                    <td class="num mono">${fmt(p.current_price ?? p.entry_price)}</td>
+                    <td class="num mono ${p.unrealized_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'} mono">${fmt(p.unrealized_pnl)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderTrades(list) {
+            const tb = els.tradesBody;
+            if (!list.length) { tb.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted);">No trades</td></tr>'; return; }
+            tb.innerHTML = list.slice(0, 50).map(t => `
+                <tr>
+                    <td class="mono" style="font-size:11px;">${new Date(t.timestamp).toLocaleTimeString()}</td>
+                    <td class="mono">${t.symbol}</td>
+                    <td><span class="side-${t.side}">${t.side.toUpperCase()}</span></td>
+                    <td class="num mono">${fmtNum(t.volume)}</td>
+                    <td class="num mono">${fmt(t.price)}</td>
+                    <td class="num ${t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'} mono">${fmt(t.pnl)}</td>
+                    <td>${t.strategy}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderAgents(list) {
+            const el = els.agentsList;
+            if (!list.length) { el.innerHTML = '<div style="padding:12px;color:var(--muted);text-align:center;font-size:13px;">No agents</div>'; return; }
+            el.innerHTML = list.map(a => `
+                <div class="agent-row">
+                    <span class="agent-name">${a.name}</span>
+                    <div class="agent-status">
+                        <span class="status-dot ${a.status === 'healthy' ? 'connected' : 'disconnected'}"></span>
+                        <span>${a.status}</span>
+                        <span class="agent-last mono">${a.last_heartbeat ? new Date(a.last_heartbeat).toLocaleTimeString() : '--:--:--'}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderStrategies(list) {
+            const el = els.strategiesList;
+            if (!list.length) { el.innerHTML = '<div style="padding:12px;color:var(--muted);text-align:center;font-size:13px;">No strategies</div>'; return; }
+            el.innerHTML = list.map(s => `
+                <div class="strategy-item">
+                    <div class="strategy-head">
+                        <div>
+                            <div class="strategy-name">${s.name}</div>
+                            <div class="strategy-meta">${s.description || ''}</div>
+                        </div>
+                        <span class="strategy-status ${s.status === 'active' ? 'status-active' : s.status === 'standby' ? 'status-standby' : 'status-training'}">${s.status.toUpperCase()}</span>
+                    </div>
+                    ${s.params ? '<div class="strategy-params">' + Object.entries(s.params).map(([k,v]) => `<div class="param"><span class="param-label">${k}</span><span class="param-value mono">${v}</span></div>`).join('') + '</div>' : ''}
+                </div>
+            `).join('');
+        }
+
+        function renderSignals(list) {
+            const container = document.getElementById('signalsList') || document.createElement('div');
+            if (!container.id) { container.id = 'signalsList'; container.className = 'signals-list'; document.querySelector('.signals-list')?.replaceWith(container); }
+            if (!list.length) { container.innerHTML = '<div style="padding:12px;color:var(--muted);text-align:center;font-size:13px;">No signals</div>'; return; }
+            container.innerHTML = list.slice(0, 20).map(s => `
+                <div class="signal-row">
+                    <span class="signal-symbol mono">${s.symbol}</span>
+                    <span class="signal-agent">${s.agent}</span>
+                    <span class="signal-action ${s.action === 'buy' ? 'action-buy' : s.action === 'sell' ? 'action-sell' : 'action-hold'}">${s.action.toUpperCase()}</span>
+                    <span class="signal-conf mono">${(s.confidence * 100).toFixed(0)}%</span>
+                </div>
+            `).join('');
+        }
+
+        function addLog(entry) {
+            const div = document.createElement('div');
+            div.className = `log-entry ${entry.level || 'info'}`;
+            div.innerHTML = `<span class="log-time">${entry.time || new Date().toLocaleTimeString()}</span><span class="log-source">[${entry.source || 'System'}]</span><span class="log-msg">${entry.message}</span>`;
+            els.logsContainer.insertBefore(div, els.logsContainer.firstChild);
+            while (els.logsContainer.children.length > 200) els.logsContainer.removeChild(els.logsContainer.lastChild);
+        }
+
+        function updateRiskPanel(data) {
+            const drawdown = data.drawdown_pct ?? 0;
+            const margin = data.margin_used_pct ?? 0;
+            const budget = data.risk_budget_remaining ?? 0;
+            const circuit = data.circuit_breaker ?? false;
+            
+            document.getElementById('riskDrawdown').textContent = drawdown.toFixed(2) + '%';
+            document.getElementById('riskDrawdownDelta').textContent = 'Limit: ' + (data.max_drawdown_pct ?? 15) + '%';
+            document.getElementById('riskMargin').textContent = margin.toFixed(1) + '%';
+            document.getElementById('riskMarginDelta').textContent = 'Limit: 20%';
+            document.getElementById('riskBudget').textContent = '$' + budget.toLocaleString();
+            document.getElementById('riskBudgetDelta').textContent = 'Per trade: 2%';
+            
+            const circuitEl = document.getElementById('circuitBreaker');
+            if (circuit) {
+                circuitEl.style.display = 'block';
+            } else {
+                circuitEl.style.display = 'none';
+            }
+        }
+
+        function addSniperAlert(data) {
+            const container = document.getElementById('sniperAlerts');
+            if (!container) return;
+            
+            const event = data.data?.event || 'detected';
+            const token = data.data?.token || 'UNKNOWN';
+            const chain = data.data?.chain || 'unknown';
+            const liquidity = data.data?.liquidity_usd || 0;
+            const age = data.data?.age_minutes || 0;
+            const price = data.data?.price_usd || 0;
+            
+            const eventColors = {
+                'detected': 'var(--warning)',
+                'executed': 'var(--signal)',
+                'failed': 'var(--alert)'
+            };
+            const eventLabels = {
+                'detected': 'DETECTED',
+                'executed': 'EXECUTED',
+                'failed': 'FAILED'
+            };
+            
+            const color = eventColors[event] || 'var(--muted)';
+            const label = eventLabels[event] || event.toUpperCase();
+            
+            const div = document.createElement('div');
+            div.className = 'signal-row';
+            div.style.borderLeft = '3px solid ' + color;
+            div.innerHTML = `
+                <span class="signal-symbol mono">${token}</span>
+                <span class="signal-agent">${chain}</span>
+                <span class="signal-action" style="background: ${color}20; color: ${color}; border-color: ${color};">${label}</span>
+                <span class="signal-conf mono">$${liquidity.toLocaleString()} | ${age}min</span>
+            `;
+            
+            // Insert at top
+            if (container.firstChild && container.firstChild.textContent.includes('No sniper alerts')) {
+                container.innerHTML = '';
+            }
+            container.insertBefore(div, container.firstChild);
+            
+            // Limit to 50 alerts
+            while (container.children.length > 50) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function updateStrategyCard(data) {
+            const container = document.getElementById('strategiesList');
+            if (!container) return;
+            
+            // Find existing strategy card
+            let card = container.querySelector('[data-strategy-id="' + data.data.id + '"]');
+            
+            const status = data.data.status || 'standby';
+            const statusClass = status === 'active' ? 'status-active' : status === 'standby' ? 'status-standby' : 'status-training';
+            
+            const paramsHtml = data.data.params ? 
+                '<div class="strategy-params">' + Object.entries(data.data.params).map(([k,v]) => 
+                    `<div class="param"><span class="param-label">${k}</span><span class="param-value mono">${v}</span></div>`
+                ).join('') + '</div>' : '';
+            
+            const html = `
+                <div class="strategy-item" data-strategy-id="${data.data.id}">
+                    <div class="strategy-head">
+                        <div>
+                            <div class="strategy-name">${data.data.id === 'btc_funding' ? 'BTC Funding Arb' : data.data.id === 'sniper' ? 'Sniper Bot' : data.data.id === 'rl' ? 'RL Agent (PPO)' : 'Quant Pipeline'}</div>
+                            <div class="strategy-meta">${data.data.id === 'btc_funding' ? 'Delta-neutral: Spot + Perp Short' : data.data.id === 'sniper' ? 'DEX New Token Hunter' : data.data.id === 'rl' ? 'Portfolio Allocation Policy' : 'RSI + EMA + Bollinger + Volume'}</div>
+                        </div>
+                        <span class="strategy-status ${status === 'active' ? 'status-active' : status === 'standby' ? 'status-standby' : 'status-training'}">${status.toUpperCase()}</span>
+                    </div>
+                    ${paramsHtml}
+                </div>
+            `;
+            
+            if (card) {
+                card.outerHTML = html;
+            } else {
+                // Insert at top if new
+                const temp = document.createElement('div');
+                temp.innerHTML = html;
+                container.insertBefore(temp.firstElementChild, container.firstChild);
+            }
+        }
+
+        // ============ INIT ============
+        function init() {
+            initEquityChart();
+            connect();
+            fetchInitial();
+            setInterval(() => { els.lastUpdate.textContent = nowStr(); }, 1000);
+        }
+
+        async function fetchInitial() {
+            try {
+                const [metrics, positions, trades, agents, strategies, signals, equity, risk, sniper] = await Promise.all([
+                    fetch('/api/metrics/summary').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/positions').then(r => r.json()).catch(() => []),
+                    fetch('/api/trades?limit=50').then(r => r.json()).catch(() => []),
+                    fetch('/api/agents').then(r => r.json()).catch(() => []),
+                    fetch('/api/strategies').then(r => r.json()).catch(() => []),
+                    fetch('/api/signals?limit=20').then(r => r.json()).catch(() => []),
+                    fetch('/api/equity/history?days=30').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/risk').then(r => r.json()).catch(() => ({})),
+                    fetch('/api/sniper/alerts').then(r => r.json()).catch(() => []),
+                ]);
+                updateMetrics(metrics);
+                renderPositions(positions);
+                renderTrades(trades);
+                renderAgents(agents);
+                renderStrategies(strategies);
+                renderSignals(signals);
+                if (equity) updateEquityDisplay(equity);
+                if (risk) updateRiskPanel(risk);
+                if (sniper && sniper.length) {
+                    sniper.slice(0, 20).forEach(s => addSniperAlert(s));
+                }
+            } catch (e) { console.error('Initial fetch failed:', e); }
+        }
+
+        // ============ START ============
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

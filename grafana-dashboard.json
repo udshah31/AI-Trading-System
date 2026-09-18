@@ -1,0 +1,452 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 0.1}
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "legend": {"calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "expr": "equity_usd",
+          "legendFormat": "{{account}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Equity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0},
+              {"color": "green", "value": 100}
+            ]
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0},
+      "id": 2,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "daily_pnl_usd",
+          "legendFormat": "Daily P&L",
+          "refId": "A"
+        }
+      ],
+      "title": "Daily P&L",
+      "type": "gauge"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 10},
+              {"color": "red", "value": 50}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0},
+      "id": 3,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "position_size_usd",
+          "legendFormat": "{{symbol}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Open Positions",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.4},
+              {"color": "green", "value": 0.55}
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+      "id": 4,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "win_rate",
+          "legendFormat": "Win Rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Win Rate (30d)",
+      "type": "gauge"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.05},
+              {"color": "red", "value": 0.15}
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+      "id": 5,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "drawdown_pct",
+          "legendFormat": "Drawdown",
+          "refId": "A"
+        }
+      ],
+      "title": "Max Drawdown",
+      "type": "gauge"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 6,
+      "options": {
+        "legend": {"calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "expr": "trade_pnl_usd_bucket",
+          "legendFormat": "{{symbol}} - {{strategy}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Trade P&L Distribution",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 7,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "expr": "rate(trades_total[5m])",
+          "legendFormat": "{{symbol}} {{side}} {{exchange}} {{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Trade Rate (5m)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [{"options": {"0": {"color": "red", "index": 0, "text": "Down"}, "1": {"color": "yellow", "index": 1, "text": "Stale"}, "2": {"color": "green", "index": 2, "text": "Healthy"}}, "type": "value"}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 1}, {"color": "green", "value": 2}]},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "agent_heartbeat_timestamp",
+          "legendFormat": "{{agent}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Agent Health Status",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "id": 9,
+      "options": {
+        "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "expr": "signal_processing_latency_seconds",
+          "legendFormat": "{{agent}} - {{signal_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Signal Processing Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "id": 10,
+      "options": {
+        "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "expr": "trade_execution_latency_seconds",
+          "legendFormat": "{{exchange}} - {{order_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Order Execution Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 10},
+              {"color": "red", "value": 100}
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 32},
+      "id": 11,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "errors_total",
+          "legendFormat": "{{agent}} - {{error_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Error Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 32},
+      "id": 12,
+      "options": {
+        "legend": {"calcs": ["sum"], "displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "expr": "rate(messages_processed_total[5m])",
+          "legendFormat": "{{agent}} - {{channel}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Message Processing Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 5}
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 32},
+      "id": 13,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "market_data_staleness_seconds",
+          "legendFormat": "{{source}} - {{symbol}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Market Data Staleness",
+      "type": "gauge"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["trading", "crypto", "production"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Trading System Dashboard",
+  "uid": "trading-system",
+  "version": 1,
+  "weekStart": ""
+}
