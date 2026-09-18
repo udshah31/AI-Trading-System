@@ -1,0 +1,15 @@
+# secrets
+.env
+*.pem
+*.key
+# databases
+*.db
+*.sqlite*
+# python
+__pycache__/
+*.pyc
+.venv/
+# macOS
+.DS_Store
+# logs
+*.log
