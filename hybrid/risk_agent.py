@@ -8,7 +8,6 @@ from hybrid.risk_manager import RiskManager
 from hybrid.quant_engine import QuantDecision
 from hybrid.technical_indicators import TechnicalSignals
 from hybrid.storage import StorageService
-import asyncio
 from typing import Optional
 
 
@@ -18,101 +17,45 @@ class RiskAgent(BaseAgent):
         self.config = config
         self.risk_manager = RiskManager(config)
         self.storage: Optional[StorageService] = None
-        self._monitor_task: Optional[asyncio.Task] = None
         self.bus.subscribe(Channel.SIGNALS, self._on_quant_decision)
+        self.bus.subscribe(Channel.SIGNALS, self._on_portfolio_update)
     
     async def start(self):
         print("[RiskAgent] Started")
-        self._monitor_task = asyncio.create_task(self._monitor_loop())
-    
+
     async def stop(self):
-        if self._monitor_task:
-            self._monitor_task.cancel()
         print("[RiskAgent] Stopped")
 
     def set_storage(self, storage: StorageService):
         self.storage = storage
 
-    async def _monitor_loop(self):
-        """Emit risk metrics every 10 seconds"""
-        while True:
-            try:
-                await self._emit_risk_update()
-                await asyncio.sleep(10)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[RiskAgent] Monitor error: {e}")
-                await asyncio.sleep(10)
-
-    async def _emit_risk_update(self):
-        """Emit risk metrics to dashboard"""
-        if not self.storage:
+    async def _on_portfolio_update(self, payload: dict):
+        """Keep the risk manager on the bot's real equity and peak, and refresh the dashboard's limits."""
+        if payload.get("type") != "portfolio_update":
             return
-        try:
-            async with self.storage.db.session() as session:
-                from sqlalchemy import select, func
-                from hybrid.storage import Trade, Position, EquityCurve
-                from datetime import datetime, timezone, timedelta
-                
-                today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-                
-                # Daily P&L
-                pnl_today = await session.execute(
-                    select(func.sum(Trade.pnl)).where(Trade.timestamp >= today)
-                )
-                daily_pnl = float(pnl_today.scalar() or 0)
-                
-                # Total equity
-                equity_result = await session.execute(
-                    select(EquityCurve).order_by(EquityCurve.timestamp.desc()).limit(1)
-                )
-                equity_row = equity_result.scalars().first()
-                total_equity = float(equity_row.equity) if equity_row else 0
-                
-                # Drawdown
-                max_drawdown = 0.0
-                if equity_row:
-                    max_drawdown = float(equity_row.drawdown_pct or 0)
-                
-                # Open positions
-                pos_result = await session.execute(
-                    select(func.count(Position.id)).where(Position.is_open == True)
-                )
-                position_count = pos_result.scalar() or 0
-                
-                # Total exposure
-                exposure_result = await session.execute(
-                    select(func.sum(Position.volume * Position.current_price)).where(Position.is_open == True)
-                )
-                total_exposure = float(exposure_result.scalar() or 0)
-                
-                # Max position %
-                max_pos_pct = self.config.max_position_pct * 100
-                
-                # Risk budget remaining (2% per trade * remaining trades)
-                risk_per_trade = self.config.max_risk_per_trade_pct * total_equity
-                max_daily_loss = self.config.max_drawdown_pct * total_equity
-                risk_budget_remaining = max(0, max_daily_loss + daily_pnl)
-                
-                self.bus.publish(Channel.SIGNALS, {
-                    "type": "risk_update",
-                    "data": {
-                        "drawdown_pct": round(max_drawdown, 2),
-                        "max_drawdown_pct": self.config.max_drawdown_pct * 100,
-                        "daily_pnl": round(daily_pnl, 2),
-                        "max_daily_loss": round(max_daily_loss, 2),
-                        "margin_used_pct": round((total_exposure / total_equity * 100) if total_equity else 0, 1),
-                        "max_position_pct": max_pos_pct,
-                        "current_positions": position_count,
-                        "total_exposure_usd": round(total_exposure, 2),
-                        "risk_budget_remaining": round(risk_budget_remaining, 2),
-                        "circuit_breaker": max_drawdown >= self.config.max_drawdown_pct * 100,
-                        "total_equity": round(total_equity, 2),
-                    }
-                }, "risk_agent")
-        except Exception as e:
-            print(f"[RiskAgent] Emit error: {e}")
+        d = payload["data"]
+        equity, peak = float(d["equity"]), float(d["peak"])
+        self.risk_manager.sync(equity, peak)
+        drawdown_pct = self.risk_manager.current_drawdown * 100
+        max_daily_loss = self.config.max_drawdown_pct * equity
+        daily_pnl = float(d.get("daily_pnl", 0.0))
+        exposure = float(d.get("exposure", 0.0))
+        self.bus.publish(Channel.SIGNALS, {
+            "type": "risk_update",
+            "data": {
+                "drawdown_pct": round(drawdown_pct, 2),
+                "max_drawdown_pct": self.config.max_drawdown_pct * 100,
+                "daily_pnl": round(daily_pnl, 2),
+                "max_daily_loss": round(max_daily_loss, 2),
+                "margin_used_pct": round(exposure / equity * 100, 1) if equity else 0.0,
+                "max_position_pct": self.config.max_position_pct * 100,
+                "current_positions": len(d.get("positions", [])),
+                "total_exposure_usd": round(exposure, 2),
+                "risk_budget_remaining": round(max(0.0, max_daily_loss + daily_pnl), 2),
+                "circuit_breaker": self.risk_manager.current_drawdown >= self.config.max_drawdown_pct,
+                "total_equity": round(equity, 2),
+            }
+        }, "risk_agent")
 
     async def handle_message(self, payload: dict):
         pass

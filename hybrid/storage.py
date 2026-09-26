@@ -428,6 +428,27 @@ class PositionRepository:
                 await session.refresh(position)
                 return position
     
+    async def sync_open(self, strategy: str, positions: List[Dict], now: datetime) -> None:
+        """Make the strategy's open rows match ``positions`` (update, open new, close gone)."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Position).where(Position.strategy == strategy, Position.is_open == True))  # noqa: E712
+            open_rows = {row.symbol: row for row in result.scalars()}
+            for pos in positions:
+                row = open_rows.pop(pos["symbol"], None)
+                entry = Decimal(str(pos.get("avg_price") or pos.get("last_price") or 0))
+                current = Decimal(str(pos["last_price"])) if pos.get("last_price") is not None else None
+                if row is None:
+                    row = Position(symbol=pos["symbol"], strategy=strategy, side="long", opened_at=now,
+                                   is_open=True, volume=Decimal(0), entry_price=entry)
+                    session.add(row)
+                row.volume = Decimal(str(pos["volume"]))
+                row.entry_price = entry
+                row.current_price = current
+                row.unrealized_pnl = Decimal(str(round(float(pos.get("unrealized_pnl", 0.0)), 8)))
+            for row in open_rows.values():
+                row.is_open, row.closed_at = False, now
+    
     async def get_open_positions(self, strategy: Optional[str] = None) -> List[Position]:
         async with self.db.session() as session:
             query = select(Position).where(Position.is_open == True)

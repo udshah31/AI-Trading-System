@@ -88,7 +88,7 @@ class ExecutionAgent(BaseAgent):
                 result = await self._execute_alpaca(data)
             
             await self._send_result(result.success, symbol, result.message, result.order_id, exchange,
-                                    client_order_id=client_order_id)
+                                    client_order_id=client_order_id, avg_price=getattr(result, "avg_price", None))
         except Exception as e:
             await self._send_result(False, symbol, str(e), client_order_id=client_order_id)
     
@@ -130,10 +130,13 @@ class ExecutionAgent(BaseAgent):
             success: bool
             order_id: Optional[str]
             message: str
+            avg_price: Optional[float]
         
         r = SimpleResult()
         r.success = result.success
         r.order_id = result.order_id
+        fill = getattr(result, "avg_fill_price", None)
+        r.avg_price = float(fill) if fill is not None else None
         r.message = f"Kraken: {result.status}" + (f" - {result.error}" if result.error else "")
         return r
     
@@ -167,7 +170,7 @@ class ExecutionAgent(BaseAgent):
         return r
     
     async def _send_result(self, success: bool, symbol: str, message: str, order_id: Optional[str] = None, exchange: str = "",
-                           client_order_id: Optional[str] = None):
+                           client_order_id: Optional[str] = None, avg_price: Optional[float] = None):
         self.bus.publish(Channel.ORDERS, {
             "type": "execution_result",
             "source": "execution_agent",
@@ -178,5 +181,6 @@ class ExecutionAgent(BaseAgent):
                 "message": message,
                 "exchange": exchange,
                 "client_order_id": client_order_id,
+                "avg_price": avg_price,
             }
         }, "execution_agent")

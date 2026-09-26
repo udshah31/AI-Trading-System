@@ -11,12 +11,14 @@ from hybrid.storage import StorageService
 
 
 class StorageAgent(BaseAgent):
+    EQUITY_INTERVAL_S = 60.0  # equity curve / positions snapshot at most once a minute
+
     def __init__(self, bus: MessageBus, storage: StorageService, market_data_interval: float = 60.0):
         super().__init__("storage_agent", bus)
         self.storage = storage
         self.market_data_interval = market_data_interval
-        self._pending_orders: dict = {}
         self._last_market_write: dict = {}
+        self._last_equity_write = 0.0  # time.time() of the last equity/positions snapshot
 
     async def handle_message(self, payload: dict):
         pass
@@ -47,38 +49,45 @@ class StorageAgent(BaseAgent):
             except Exception as e:
                 print(f"[StorageAgent] signal persist error: {e}")
 
-    async def _on_order(self, payload: dict):
-        msg_type = payload.get("type")
-        data = payload.get("data", {})
-
-        if msg_type == "execute_order":
-            key = data.get("client_order_id") or data.get("symbol")
-            self._pending_orders[key] = data
-
-        elif msg_type == "execution_result":
-            symbol = data.get("symbol")
-            request = self._pending_orders.pop(data.get("order_id"), None)
-            if request is None:
-                request = self._pending_orders.pop(symbol, None) or {}
-            if not data.get("success"):
-                return
+        elif msg_type == "trade_filled":
             try:
                 await self.storage.record_trade(
                     timestamp=datetime.now(timezone.utc),
-                    symbol=symbol[:20],
-                    side=str(request.get("side", "buy")).lower(),
-                    volume=Decimal(str(request.get("volume", 0))),
-                    price=Decimal(str(request.get("price") or 0)),
+                    symbol=str(data.get("symbol", ""))[:20],
+                    side=str(data.get("side", "buy")).lower(),
+                    volume=Decimal(str(data.get("volume", 0))),
+                    price=Decimal(str(data.get("price") or 0)),
                     fee=Decimal("0"),
-                    strategy=request.get("strategy", "hybrid"),
+                    pnl=Decimal(str(round(float(data.get("realized_pnl", 0.0)), 8))),
+                    strategy="quant",
                     exchange=data.get("exchange", ""),
-                    order_id=data.get("order_id"),
-                    client_order_id=request.get("client_order_id"),
+                    client_order_id=data.get("client_order_id"),
                     status="filled",
-                    trade_metadata={"message": data.get("message", "")},
+                    trade_metadata={"reason": data.get("reason", "decision")},
                 )
             except Exception as e:
                 print(f"[StorageAgent] trade persist error: {e}")
+
+        elif msg_type == "portfolio_update":
+            if time.time() - self._last_equity_write < self.EQUITY_INTERVAL_S:
+                return
+            self._last_equity_write = time.time()
+            now = datetime.now(timezone.utc)
+            try:
+                await self.storage.record_equity(
+                    timestamp=now, account="default",
+                    equity=Decimal(str(round(float(data["equity"]), 2))),
+                    cash=Decimal(str(round(float(data.get("cash", 0.0)), 2))),
+                    positions_value=Decimal(str(round(float(data.get("exposure", 0.0)), 2))),
+                    daily_pnl=Decimal(str(round(float(data.get("daily_pnl", 0.0)), 2))),
+                    drawdown_pct=Decimal(str(round(float(data.get("drawdown_pct", 0.0)) * 100, 6))),  # percent
+                )
+                await self.storage.positions.sync_open("quant", data.get("positions", []), now)
+            except Exception as e:
+                print(f"[StorageAgent] equity/positions persist error: {e}")
+
+    async def _on_order(self, payload: dict):
+        pass  # fills are recorded from the orchestrator's trade_filled (it knows the realised P&L)
 
     async def _on_market_data(self, payload: dict):
         symbol = payload.get("symbol")

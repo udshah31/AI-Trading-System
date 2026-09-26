@@ -107,6 +107,11 @@ class RiskManager:
         """Total portfolio value (cash + positions)."""
         return self.current_capital
 
+    def sync(self, equity: float, peak: float) -> None:
+        """Adopt the live books' equity and high-water mark (drives sizing and the circuit breaker)."""
+        self.current_capital = equity
+        self.peak_capital = max(peak, equity)
+
     def update_capital(self, new_value: float) -> None:
         """Update the portfolio value (call after each trade/day)."""
         self.current_capital = new_value
