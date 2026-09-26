@@ -36,6 +36,7 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://trader:secret@localhost:5432/trading"
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+ANALYSIS_INTERVAL_S = 300
 
 
 class PaperTradingSystem:
@@ -159,10 +160,19 @@ class PaperTradingSystem:
         except asyncio.CancelledError:
             pass
     
+    async def _publish_status(self):
+        """Mode and analysis schedule for the dashboard's decision band"""
+        await self.bus.client.set("system:mode", "live" if live_trading_enabled() else "dry_run")
+        await self.bus.client.set("system:analysis_interval", str(ANALYSIS_INTERVAL_S))
+    
     async def _heartbeat_loop(self):
         """Publish agent heartbeats to Redis for the dashboard every 10s"""
         while self.running:
             now = time.time()
+            try:
+                await self._publish_status()
+            except Exception:
+                pass
             for name in list(self.agents.keys()):
                 try:
                     await self.bus.client.set(f"agent:heartbeat:{name}", str(now))
@@ -175,15 +185,19 @@ class PaperTradingSystem:
             await asyncio.sleep(10)
     
     async def _analysis_loop(self):
-        """Trigger analysis every 5 minutes"""
+        """Trigger analysis every ANALYSIS_INTERVAL_S"""
         while self.running:
-            await asyncio.sleep(300)
+            await asyncio.sleep(ANALYSIS_INTERVAL_S)
             if not self.running:
                 break
             
             orchestrator = self.agents.get('orchestrator')
             if orchestrator:
                 print("\n🔄 Running scheduled analysis...")
+                try:
+                    await self.bus.client.set("system:last_analysis", str(time.time()))
+                except Exception:
+                    pass
                 await orchestrator.analyze("BTC/USDT")
                 await orchestrator.analyze("ETH/USDT")
     

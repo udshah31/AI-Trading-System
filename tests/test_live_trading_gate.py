@@ -155,7 +155,7 @@ def test_dashboard_relays_agent_updates():
                 "payload": {"type": "risk_update", "data": {"drawdown_pct": 1.5}}}
     assert relay_message(json.dumps(envelope)) == {"type": "risk_update", "data": {"drawdown_pct": 1.5}}
 
-    envelope["payload"]["type"] = "quant_decision"  # internal traffic stays off the websocket
+    envelope["payload"]["type"] = "risk_assessment"  # internal traffic stays off the websocket
     assert relay_message(json.dumps(envelope)) is None
     assert relay_message("not json") is None
 

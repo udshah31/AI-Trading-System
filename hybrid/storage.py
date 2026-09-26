@@ -6,14 +6,14 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, AsyncIterator, Dict, List, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
     Column, String, Integer, BigInteger, Numeric, DateTime, 
-    Text, Index, ForeignKey, Enum as SQLEnum, Boolean, JSON, text
+    Text, Index, ForeignKey, Enum as SQLEnum, Boolean, JSON, UniqueConstraint, text
 )
 from sqlalchemy.ext.asyncio import (
     create_async_engine, AsyncSession, async_sessionmaker
@@ -225,6 +225,34 @@ class SystemEvent(Base):
     acknowledged: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     acknowledged_by: Mapped[Optional[str]] = mapped_column(String(50))
+
+
+class LLMAnalysis(Base):
+    """One TradingAgents run: each signal's report text, extracted score, and how it was scored."""
+    __tablename__ = "llm_analyses"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    reports: Mapped[dict] = mapped_column(JSON, nullable=False)      # signal -> report text
+    scores: Mapped[dict] = mapped_column(JSON, nullable=False)       # signal -> 0..1
+    sources: Mapped[dict] = mapped_column(JSON, nullable=False)      # signal -> label|typesafe|unavailable
+    confidences: Mapped[dict] = mapped_column(JSON, nullable=False)  # signal -> TypeSafe confidence
+
+
+class SignalLabel(Base):
+    """A person's direction for one report: the ground truth the extractor is measured against."""
+    __tablename__ = "signal_labels"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    analysis_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("llm_analyses.id", ondelete="CASCADE"), nullable=False, index=True)
+    signal: Mapped[str] = mapped_column(String(32), nullable=False)
+    label: Mapped[str] = mapped_column(String(10), nullable=False)  # bearish | neutral | bullish
+    labeled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    
+    __table_args__ = (UniqueConstraint("analysis_id", "signal", name="uq_signal_labels_analysis_signal"),)
 
 
 # =============================================================================
@@ -529,6 +557,77 @@ class OrderRepository:
 # HIGH-LEVEL STORAGE SERVICE
 # =============================================================================
 
+class LLMAnalysisRepository:
+    def __init__(self, db: DatabaseManager):
+        self.db = db
+    
+    async def save_analysis(self, ticker: str, trade_date: str, final_state: Dict, signals: Any) -> str:
+        """Store a TradingAgents run; ``signals`` is the LLMSignals extracted from it."""
+        from hybrid.signal_extractor import SIGNAL_REPORTS
+        analysis = LLMAnalysis(
+            created_at=datetime.now(timezone.utc),
+            ticker=ticker,
+            trade_date=trade_date,
+            reports={name: final_state.get(key) or "" for name, key in SIGNAL_REPORTS.items()},
+            scores={name: float(getattr(signals, f"{name}_score")) for name in SIGNAL_REPORTS},
+            sources=dict(signals.sources),
+            confidences={k: float(v) for k, v in signals.confidences.items()},
+        )
+        async with self.db.session() as session:
+            session.add(analysis)
+            await session.flush()
+            return analysis.id
+    
+    async def list_recent(self, limit: int = 50) -> List[tuple]:
+        """[(analysis, labelled_count)], newest first."""
+        labelled = (select(SignalLabel.analysis_id, func.count().label("n"))
+                    .group_by(SignalLabel.analysis_id).subquery())
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(LLMAnalysis, func.coalesce(labelled.c.n, 0))
+                .outerjoin(labelled, labelled.c.analysis_id == LLMAnalysis.id)
+                .order_by(LLMAnalysis.created_at.desc())
+                .limit(limit)
+            )
+            return [(row[0], int(row[1])) for row in result.all()]
+    
+    async def get(self, analysis_id: str) -> tuple:
+        """(analysis or None, {signal: label})"""
+        async with self.db.session() as session:
+            analysis = await session.get(LLMAnalysis, analysis_id)
+            labels = await session.execute(select(SignalLabel).where(SignalLabel.analysis_id == analysis_id))
+            return analysis, {lab.signal: lab.label for lab in labels.scalars()}
+    
+    async def set_label(self, analysis_id: str, signal: str, label: str) -> None:
+        async with self.db.session() as session:
+            existing = (await session.execute(select(SignalLabel).where(
+                SignalLabel.analysis_id == analysis_id, SignalLabel.signal == signal))).scalars().first()
+            if existing:
+                existing.label, existing.labeled_at = label, datetime.now(timezone.utc)
+            else:
+                session.add(SignalLabel(analysis_id=analysis_id, signal=signal, label=label,
+                                        labeled_at=datetime.now(timezone.utc)))
+    
+    async def clear_label(self, analysis_id: str, signal: str) -> None:
+        async with self.db.session() as session:
+            existing = (await session.execute(select(SignalLabel).where(
+                SignalLabel.analysis_id == analysis_id, SignalLabel.signal == signal))).scalars().first()
+            if existing:
+                await session.delete(existing)
+    
+    async def labelled_rows(self) -> List[Dict]:
+        """Every labelled report with the extractor's reading, for signal_eval.accuracy()."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(SignalLabel, LLMAnalysis).join(LLMAnalysis, SignalLabel.analysis_id == LLMAnalysis.id))
+            return [
+                {"label": lab.label, "score": a.scores.get(lab.signal, 0.5),
+                 "source": a.sources.get(lab.signal, "unavailable"),
+                 "confidence": a.confidences.get(lab.signal), "text": a.reports.get(lab.signal, "")}
+                for lab, a in result.all()
+            ]
+
+
 class StorageService:
     """Unified storage interface for all agents"""
     
@@ -540,6 +639,7 @@ class StorageService:
         self.signals = SignalRepository(self.db)
         self.orders = OrderRepository(self.db)  # Would need to create
         self.market_data = MarketDataRepository(self.db)
+        self.llm = LLMAnalysisRepository(self.db)
     
     async def initialize(self):
         await self.db.initialize()
