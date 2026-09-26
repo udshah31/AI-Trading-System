@@ -44,5 +44,8 @@ uvicorn>=0.24.0
 pyyaml>=6.0.0
 python-json-logger>=2.0.0
 
+# TypeSafe System One (scores free-text LLM reports; optional at runtime via TYPESAFE_API_KEY)
+typesafe-sdk>=0.7.1
+
 # Browser Use Cloud (V4 Agent + Managed Browser)
 browser-use-sdk>=3.11.0

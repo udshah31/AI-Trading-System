@@ -29,7 +29,7 @@ from hybrid.config import HybridConfig
 from hybrid.execution import AlpacaExecutor, ExecutionResult
 from hybrid.quant_engine import QuantDecision, compute_decision
 from hybrid.risk_manager import RiskAssessment, RiskManager
-from hybrid.signal_extractor import LLMSignals, extract_signals
+from hybrid.signal_extractor import LLMSignals, default_judge, extract_signals
 from hybrid.technical_indicators import TechnicalSignals, compute_technical_signals
 
 
@@ -184,7 +184,7 @@ class HybridPipeline:
                 ticker, trade_date, asset_type=asset_type
             )
 
-            llm_signals = extract_signals(final_state)
+            llm_signals = extract_signals(final_state, judge=default_judge())
             return llm_signals, final_state
 
         except ImportError as e:

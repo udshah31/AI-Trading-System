@@ -5,13 +5,22 @@ Converts qualitative LLM agent outputs from TradingAgents into
 numerical scores (0.0 to 1.0) that the Quant Engine can consume.
 
 This is the BRIDGE between Track A (LLM) and Track B (Math).
-The LLM produces text + structured data; this module distills it
-into pure numbers.
+
+Three tiers, most exact first:
+1. Labels. TradingAgents renders its structured outputs with fixed headers
+   (``**Recommendation**: Sell``, ``**Action**: Buy``, ``**Rating**: Hold``,
+   ``**Overall Sentiment:** **Bearish** (Score: 2.5/10)``); these are parsed in code.
+2. TypeSafe (when TYPESAFE_API_KEY is set). Free-text reports (fundamentals, news)
+   and ratings whose label is missing (a provider's free-text fallback) are judged
+   in one batched System One call: a Score for outlook, a Choice for ratings.
+3. Otherwise the signal stays neutral (0.5) and is marked "unavailable" rather
+   than guessed from keywords.
 """
 
+import os
 import re
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 
 # ── Rating-to-Score Mapping ──
@@ -23,16 +32,20 @@ RATING_SCORES = {
     "underweight": 0.25,
     "sell": 0.0,
 }
+TRADER_ACTION_SCORES = {"buy": 1.0, "hold": 0.5, "sell": 0.0}
 
-# Sentiment band mapping (from TradingAgents SentimentReport)
-SENTIMENT_BAND_SCORES = {
-    "bullish": 1.0,
-    "mildly bullish": 0.75,
-    "neutral": 0.50,
-    "mixed": 0.50,
-    "mildly bearish": 0.25,
-    "bearish": 0.0,
-}
+SIGNALS = ("sentiment", "fundamental", "news", "research_debate", "trader_action", "portfolio_decision")
+
+# Outlook Score levels, ordered bearish -> bullish; score / 4 gives the 0-1 signal.
+OUTLOOK_LEVELS = [
+    "Strongly bearish: expects the stock to fall, or recommends selling or avoiding it",
+    "Mildly bearish: leans negative; the concerns outweigh the positives",
+    "Neutral, mixed, or no clear view on the stock's direction",
+    "Mildly bullish: leans positive; the positives outweigh the concerns",
+    "Strongly bullish: expects the stock to rise, or recommends buying or adding to it",
+]
+OUTLOOK_BANDS = ["bearish", "mildly bearish", "neutral", "mildly bullish", "bullish"]
+NO_RATING = "no clear rating"
 
 
 @dataclass
@@ -61,193 +74,168 @@ class LLMSignals:
     sentiment_confidence: str = "low"
     portfolio_rating: str = "hold"
     trader_action: str = "hold"
+    # How each signal was obtained: "label", "typesafe" or "unavailable" (left neutral)
+    sources: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         """Human-readable summary of extracted signals."""
+        def src(name):
+            return self.sources.get(name, "unavailable")
         return (
             f"LLM Signals:\n"
-            f"  Sentiment:  {self.sentiment_score:.2f} ({self.sentiment_band})\n"
-            f"  Fundamental: {self.fundamental_score:.2f}\n"
-            f"  News:        {self.news_score:.2f}\n"
-            f"  Debate:      {self.research_debate_score:.2f}\n"
-            f"  Trader:      {self.trader_action_score:.2f} ({self.trader_action})\n"
-            f"  Portfolio:   {self.portfolio_decision_score:.2f} ({self.portfolio_rating})\n"
+            f"  Sentiment:  {self.sentiment_score:.2f} ({self.sentiment_band}) [{src('sentiment')}]\n"
+            f"  Fundamental: {self.fundamental_score:.2f} [{src('fundamental')}]\n"
+            f"  News:        {self.news_score:.2f} [{src('news')}]\n"
+            f"  Debate:      {self.research_debate_score:.2f} [{src('research_debate')}]\n"
+            f"  Trader:      {self.trader_action_score:.2f} ({self.trader_action}) [{src('trader_action')}]\n"
+            f"  Portfolio:   {self.portfolio_decision_score:.2f} ({self.portfolio_rating}) "
+            f"[{src('portfolio_decision')}]\n"
         )
 
 
-def extract_signals(final_state: dict) -> LLMSignals:
+class TypeSafeJudge:
+    """Asks TypeSafe System One questions; one batched call per extraction."""
+
+    def __init__(self, client=None):
+        if client is None:
+            from typesafe_sdk import TypeSafeClient  # reads TYPESAFE_API_KEY; model defaults to jev-latest
+            client = TypeSafeClient()
+        self.client = client
+
+    def ask(self, state: dict, questions: dict):
+        return self.client.system_one(state=state, questions=questions)
+
+
+def default_judge() -> Optional[TypeSafeJudge]:
+    """A TypeSafe judge when TYPESAFE_API_KEY is set, otherwise None."""
+    return TypeSafeJudge() if os.getenv("TYPESAFE_API_KEY") else None
+
+
+def extract_signals(final_state: dict, judge: Optional[TypeSafeJudge] = None) -> LLMSignals:
     """Extract numerical scores from TradingAgents' final graph state.
 
     Args:
         final_state: The complete state dictionary returned by
                      TradingAgentsGraph.propagate().
+        judge: Optional TypeSafe judge for free text and missing labels.
 
     Returns:
         LLMSignals with all scores normalized to [0.0, 1.0].
     """
-    signals = LLMSignals(available=True)
+    signals = LLMSignals(available=True, sources={name: "unavailable" for name in SIGNALS})
+    # signal -> (state key, report text, question, apply(answer))
+    asks: dict[str, tuple[str, str, object, Callable]] = {}
 
-    # ── 1. Sentiment Score ──
-    # TradingAgents' sentiment_analyst outputs a SentimentReport with
-    # overall_band (Bullish/Bearish/etc.) and overall_score (0-10).
-    sentiment_report = final_state.get("sentiment_report", "")
-    signals.sentiment_score, signals.sentiment_band, signals.sentiment_confidence = (
-        _extract_sentiment(sentiment_report)
-    )
+    # ── 1. Sentiment ──
+    text = final_state.get("sentiment_report") or ""
+    parsed = _parse_sentiment(text)
+    if parsed:
+        signals.sentiment_score, signals.sentiment_band, signals.sentiment_confidence = parsed
+        signals.sources["sentiment"] = "label"
+    elif text:
+        def apply_sentiment(answer):
+            signals.sentiment_score = answer.score / 4
+            signals.sentiment_band = OUTLOOK_BANDS[round(answer.score)]
+        asks["sentiment"] = ("sentiment_report", text,
+                             _outlook_question("sentiment_report", "the market sentiment it describes"),
+                             apply_sentiment)
 
-    # ── 2. Fundamental Score ──
-    # The fundamentals report is free text. We parse for bullish/bearish
-    # keywords and look for the rating embedded in the report.
-    fundamentals_report = final_state.get("fundamentals_report", "")
-    signals.fundamental_score = _extract_from_report(fundamentals_report)
+    # ── 2-3. Fundamentals and news: free text, TypeSafe only ──
+    for name, key, subject in (("fundamental", "fundamentals_report", "the company's fundamentals"),
+                               ("news", "news_report", "the net effect of the news")):
+        text = final_state.get(key) or ""
+        if text:
+            asks[name] = (key, text, _outlook_question(key, subject),
+                          lambda answer, name=name: setattr(signals, f"{name}_score", answer.score / 4))
 
-    # ── 3. News Score ──
-    news_report = final_state.get("news_report", "")
-    signals.news_score = _extract_from_report(news_report)
+    # ── 4. Research Manager recommendation ──
+    text = final_state.get("investment_plan") or ""
+    rating = _parse_label(text, "Recommendation", RATING_SCORES)
+    if rating:
+        signals.research_debate_score = RATING_SCORES[rating]
+        signals.sources["research_debate"] = "label"
+    elif text:
+        asks["research_debate"] = ("investment_plan", text, _rating_question("investment_plan", RATING_SCORES),
+                                   lambda choice: setattr(signals, "research_debate_score", RATING_SCORES[choice]))
 
-    # ── 4. Research Debate Score ──
-    # The Research Manager's investment_plan contains a recommendation.
-    investment_plan = final_state.get("investment_plan", "")
-    signals.research_debate_score = _extract_rating_score(investment_plan)
+    # ── 5. Trader action ──
+    text = final_state.get("trader_investment_plan") or ""
+    action = _parse_label(text, "Action", TRADER_ACTION_SCORES)
+    if action:
+        signals.trader_action_score, signals.trader_action = TRADER_ACTION_SCORES[action], action
+        signals.sources["trader_action"] = "label"
+    elif text:
+        def apply_action(choice):
+            signals.trader_action_score, signals.trader_action = TRADER_ACTION_SCORES[choice], choice
+        asks["trader_action"] = ("trader_investment_plan", text,
+                                 _rating_question("trader_investment_plan", TRADER_ACTION_SCORES), apply_action)
 
-    # ── 5. Trader Action Score ──
-    trader_plan = final_state.get("trader_investment_plan", "")
-    signals.trader_action_score, signals.trader_action = _extract_trader_action(
-        trader_plan
-    )
+    # ── 6. Portfolio Manager decision (final LLM output) ──
+    text = final_state.get("final_trade_decision") or ""
+    rating = _parse_label(text, "Rating", RATING_SCORES)
+    if rating:
+        signals.portfolio_decision_score, signals.portfolio_rating = RATING_SCORES[rating], rating
+        signals.sources["portfolio_decision"] = "label"
+    elif text:
+        def apply_rating(choice):
+            signals.portfolio_decision_score, signals.portfolio_rating = RATING_SCORES[choice], choice
+        asks["portfolio_decision"] = ("final_trade_decision", text,
+                                      _rating_question("final_trade_decision", RATING_SCORES), apply_rating)
 
-    # ── 6. Portfolio Decision Score (Final LLM output) ──
-    final_decision = final_state.get("final_trade_decision", "")
-    signals.portfolio_decision_score, signals.portfolio_rating = (
-        _extract_portfolio_decision(final_decision)
-    )
-
+    if asks and judge:
+        _apply_judgments(signals, asks, judge)
     return signals
 
 
-def _extract_sentiment(report: str) -> tuple[float, str, str]:
-    """Extract sentiment score from the sentiment report.
+def _apply_judgments(signals: LLMSignals, asks: dict, judge: TypeSafeJudge) -> None:
+    """One batched TypeSafe call; each question sees only its own report."""
+    try:
+        response = judge.ask(state={key: text for key, text, _, _ in asks.values()},
+                             questions={name: question for name, (_, _, question, _) in asks.items()})
+    except Exception as e:
+        print(f"[SignalExtractor] TypeSafe unavailable, leaving {sorted(asks)} neutral: {e}")
+        return
+    for name, (_, _, _, apply) in asks.items():
+        if name in response.scores:
+            apply(response.scores[name])
+            signals.sources[name] = "typesafe"
+        elif name in response.choices and response.choices[name].choice != NO_RATING:
+            apply(response.choices[name].choice)
+            signals.sources[name] = "typesafe"
 
-    The SentimentReport contains overall_score (0-10) and overall_band.
-    """
-    if not report:
-        return 0.5, "neutral", "low"
 
-    report_lower = report.lower()
-
-    # Try to find the numerical score (0-10 scale)
-    score_match = re.search(
-        r"(?:overall[_\s]*score|sentiment[_\s]*score)\s*[:=]\s*(\d+(?:\.\d+)?)",
-        report_lower,
+def _outlook_question(state_key: str, subject: str):
+    from typesafe_sdk import Score
+    return Score(
+        instructions=(
+            f"Judging {subject}, how bullish or bearish is `{state_key}` about the stock? "
+            "Judge the report's overall conclusion, not individual words: a risk the report "
+            "mentions but dismisses is not bearish, and a strength it says is fading is not bullish."
+        ),
+        criteria=OUTLOOK_LEVELS,
     )
-    if score_match:
-        raw_score = float(score_match.group(1))
-        normalized = min(max(raw_score / 10.0, 0.0), 1.0)
-    else:
-        # Fall back to band detection
-        normalized = 0.5
-        for band, score in SENTIMENT_BAND_SCORES.items():
-            if band in report_lower:
-                normalized = score
-                break
-
-    # Extract band
-    band = "neutral"
-    for b in SENTIMENT_BAND_SCORES:
-        if b in report_lower:
-            band = b
-            break
-
-    # Extract confidence
-    confidence = "medium"
-    if "high" in report_lower and "confidence" in report_lower:
-        confidence = "high"
-    elif "low" in report_lower and "confidence" in report_lower:
-        confidence = "low"
-
-    return normalized, band, confidence
 
 
-def _extract_from_report(report: str) -> float:
-    """Extract a bullish/bearish score from a free-text report.
-
-    Uses keyword frequency analysis as a simple NLP signal.
-    """
-    if not report:
-        return 0.5
-
-    report_lower = report.lower()
-
-    # Bullish keywords and their weights
-    bullish_keywords = [
-        "strong", "growth", "positive", "bullish", "upside", "outperform",
-        "beat", "exceeded", "momentum", "opportunity", "upgrade", "buy",
-        "overweight", "impressive", "robust", "accelerating", "expanding",
-    ]
-    bearish_keywords = [
-        "weak", "decline", "negative", "bearish", "downside", "underperform",
-        "miss", "missed", "risk", "concern", "downgrade", "sell",
-        "underweight", "disappointing", "slowing", "contracting", "warning",
-    ]
-
-    bull_count = sum(report_lower.count(kw) for kw in bullish_keywords)
-    bear_count = sum(report_lower.count(kw) for kw in bearish_keywords)
-    total = bull_count + bear_count
-
-    if total == 0:
-        return 0.5
-
-    # Normalize: bull_ratio ranges from 0 (all bearish) to 1 (all bullish)
-    return bull_count / total
+def _rating_question(state_key: str, ratings: dict):
+    from typesafe_sdk import Choice
+    criteria = {name: f"`{state_key}` recommends: {name}" for name in ratings}
+    criteria[NO_RATING] = f"`{state_key}` does not recommend a specific position"
+    return Choice(instructions=f"What position does `{state_key}` finally recommend for the stock?",
+                  criteria=criteria)
 
 
-def _extract_rating_score(text: str) -> float:
-    """Extract a 5-tier rating from text and convert to 0-1 score."""
-    if not text:
-        return 0.5
-
-    text_lower = text.lower()
-
-    # Check for explicit ratings (order matters — check specific first)
-    for rating, score in RATING_SCORES.items():
-        # Match the rating as a standalone word
-        if re.search(rf"\b{rating}\b", text_lower):
-            return score
-
-    return 0.5
+def _parse_label(text: str, label: str, values: dict) -> Optional[str]:
+    """Value of a rendered ``**Label**: Value`` line, if it's one of ``values``."""
+    match = re.search(rf"^\*\*{label}\*\*:\s*\**\s*([A-Za-z]+)", text, re.MULTILINE)
+    value = match.group(1).lower() if match else None
+    return value if value in values else None
 
 
-def _extract_trader_action(text: str) -> tuple[float, str]:
-    """Extract trader's buy/sell/hold action."""
-    if not text:
-        return 0.5, "hold"
-
-    text_lower = text.lower()
-
-    # TradingAgents TraderProposal uses Buy/Sell/Hold
-    if re.search(r"\baction\s*[:=]\s*buy\b", text_lower) or (
-        re.search(r"\bbuy\b", text_lower)
-        and not re.search(r"\bsell\b", text_lower)
-    ):
-        return 1.0, "buy"
-    elif re.search(r"\baction\s*[:=]\s*sell\b", text_lower) or (
-        re.search(r"\bsell\b", text_lower)
-        and not re.search(r"\bbuy\b", text_lower)
-    ):
-        return 0.0, "sell"
-
-    return 0.5, "hold"
-
-
-def _extract_portfolio_decision(text: str) -> tuple[float, str]:
-    """Extract the Portfolio Manager's final decision."""
-    if not text:
-        return 0.5, "hold"
-
-    text_lower = text.lower()
-
-    for rating, score in RATING_SCORES.items():
-        if re.search(rf"\b{rating}\b", text_lower):
-            return score, rating
-
-    return 0.5, "hold"
+def _parse_sentiment(text: str) -> Optional[tuple[float, str, str]]:
+    """``**Overall Sentiment:** **Band** (Score: x/10)`` plus ``**Confidence:** Level``."""
+    match = re.search(r"\*\*Overall Sentiment:\*\*\s*\*\*([^*]+)\*\*\s*\(Score:\s*(\d+(?:\.\d+)?)/10\)", text)
+    if not match:
+        return None
+    band, score = match.group(1).strip().lower(), float(match.group(2))
+    confidence = re.search(r"^\*\*Confidence:\*\*\s*(\w+)", text, re.MULTILINE)
+    return min(max(score / 10.0, 0.0), 1.0), band, confidence.group(1).lower() if confidence else "medium"

@@ -16,7 +16,7 @@ sys.path.insert(0, str(TA_ROOT))
 from hybrid.agent_base import BaseAgent
 from hybrid.messaging import MessageBus, Channel
 from hybrid.config import HybridConfig
-from hybrid.signal_extractor import extract_signals, LLMSignals
+from hybrid.signal_extractor import default_judge, extract_signals, LLMSignals
 
 
 
@@ -164,7 +164,7 @@ class LLMAnalystAgent(BaseAgent):
                 asset_type=request.asset_type
             )
             
-            llm_signals = extract_signals(final_state)
+            llm_signals = extract_signals(final_state, judge=default_judge())
             
             return LLMAnalysisResult(
                 ticker=request.ticker,
