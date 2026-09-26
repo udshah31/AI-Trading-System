@@ -72,11 +72,12 @@ class ExecutionAgent(BaseAgent):
         data = payload["data"]
         symbol = data["symbol"]
         asset_type = data.get("asset_type", "auto")
+        client_order_id = data.get("client_order_id")  # echoed back so callers can match fills
         
         exchange = self._route_exchange(symbol, asset_type)
         
         if not exchange:
-            await self._send_result(False, symbol, "No exchange available")
+            await self._send_result(False, symbol, "No exchange available", client_order_id=client_order_id)
             return
         
         try:
@@ -85,9 +86,10 @@ class ExecutionAgent(BaseAgent):
             else:
                 result = await self._execute_alpaca(data)
             
-            await self._send_result(result.success, symbol, result.message, result.order_id, exchange)
+            await self._send_result(result.success, symbol, result.message, result.order_id, exchange,
+                                    client_order_id=client_order_id)
         except Exception as e:
-            await self._send_result(False, symbol, str(e))
+            await self._send_result(False, symbol, str(e), client_order_id=client_order_id)
     
     def _route_exchange(self, symbol: str, asset_type: str) -> str:
         is_crypto = "/" in symbol or "-" in symbol or asset_type == "crypto"
@@ -113,7 +115,7 @@ class ExecutionAgent(BaseAgent):
             order_type=data.get("order_type", "market").lower(),
             volume=Decimal(str(data["volume"])),
             price=Decimal(str(data["price"])) if data.get("price") else None,
-            client_order_id=data.get("client_order_id"),
+            # not forwarded: Kraken's userref must be an int32; our id stays internal
             reduce_only=data.get("reduce_only", False)
         )
         
@@ -157,7 +159,8 @@ class ExecutionAgent(BaseAgent):
         r.message = result.message
         return r
     
-    async def _send_result(self, success: bool, symbol: str, message: str, order_id: str = None, exchange: str = ""):
+    async def _send_result(self, success: bool, symbol: str, message: str, order_id: str = None, exchange: str = "",
+                           client_order_id: str = None):
         self.bus.publish(Channel.ORDERS, {
             "type": "execution_result",
             "source": "execution_agent",
@@ -166,6 +169,7 @@ class ExecutionAgent(BaseAgent):
                 "symbol": symbol,
                 "order_id": order_id,
                 "message": message,
-                "exchange": exchange
+                "exchange": exchange,
+                "client_order_id": client_order_id,
             }
         }, "execution_agent")
