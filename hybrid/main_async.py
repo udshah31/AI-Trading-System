@@ -40,6 +40,24 @@ ANALYSIS_INTERVAL_S = 300
 LEARNING_INTERVAL_S = 24 * 3600
 
 
+def broker_choice() -> str:
+    """BROKER=alpaca (default: Alpaca paper trading) or BROKER=kraken."""
+    return (os.getenv("BROKER") or "alpaca").strip().lower()
+
+
+def build_broker():
+    """The Alpaca paper broker from the environment; exits with a clear message if misconfigured."""
+    if live_trading_enabled():
+        raise SystemExit("LIVE_TRADING=true isn't supported with BROKER=alpaca: this system runs Alpaca "
+                         "in paper mode only. Unset LIVE_TRADING to paper trade.")
+    key, secret = os.getenv("ALPACA_API_KEY"), os.getenv("ALPACA_SECRET_KEY")
+    if not key or not secret:
+        raise SystemExit("BROKER=alpaca needs ALPACA_API_KEY and ALPACA_SECRET_KEY (your Alpaca paper-trading "
+                         "keys) in .env")
+    from hybrid.brokers.alpaca import AlpacaBroker
+    return AlpacaBroker(key, secret, paper=True)
+
+
 class PaperTradingSystem:
     def __init__(self):
         self.config = HybridConfig()
@@ -48,6 +66,7 @@ class PaperTradingSystem:
         self.background_tasks = []
         self.kraken_spot = None
         self.kraken_futures = None
+        self.broker_name = broker_choice()
         self.storage = None
         self.running = False
     
@@ -69,12 +88,41 @@ class PaperTradingSystem:
         await self.bus.start()
         print("[Bus] Redis pub/sub listener started")
         
-        # Initialize Kraken clients (dry-run unless LIVE_TRADING=true)
         dry_run = not live_trading_enabled()
-        print(f"[System] Kraken order mode: {'DRY-RUN (simulated)' if dry_run else 'LIVE — REAL ORDERS'}")
+        broker = None
+        if self.broker_name == "alpaca":
+            broker = build_broker()
+            print("[System] Broker: Alpaca PAPER trading (orders go to your Alpaca paper account; "
+                  "prices from Kraken's public feed)")
+        else:
+            await self._init_kraken(dry_run)
+
+        # Core agents
+        self.agents['data'] = DataAgent(self.bus, symbols=["BTC/USDT", "ETH/USDT", "SOL/USDT"], exchange_id="kraken")
+        self.agents['quant'] = QuantAgent(self.bus, self.config)
+        self.agents['risk'] = RiskAgent(self.bus, self.config)
+        if self.storage:
+            self.agents['risk'].set_storage(self.storage)
+        if broker is not None:
+            # a paper account has real state: balance checks and crash recovery apply
+            self.agents['execution'] = ExecutionAgent(self.bus, self.config, dry_run=True, broker=broker)
+            self.agents['orchestrator'] = Orchestrator(
+                self.bus, self.config, broker=broker,
+                store=RedisHoldingsStore(self.bus.client, holdings_key(True, broker="alpaca")))
+        else:
+            self.agents['execution'] = ExecutionAgent(self.bus, self.config, dry_run=dry_run)
+            # live only: dry-run positions are simulated and don't exist on Kraken
+            self.agents['orchestrator'] = Orchestrator(
+                self.bus, self.config, exchange=None if dry_run else self.kraken_spot,
+                store=RedisHoldingsStore(self.bus.client, holdings_key(dry_run)))
+        await self._init_remaining_agents()
+
+    async def _init_kraken(self, dry_run: bool):
+        """Kraken clients (dry-run unless LIVE_TRADING=true); futures only for the funding strategy."""
+        print(f"[System] Broker: Kraken, order mode {'DRY-RUN (simulated)' if dry_run else 'LIVE — REAL ORDERS'}")
         self.kraken_spot = KrakenExecutor(KrakenConfig(
-            api_key=os.getenv("KRAKEN_API_KEY"),
-            api_secret=os.getenv("KRAKEN_API_SECRET"),
+            api_key=os.getenv("KRAKEN_API_KEY") or "",
+            api_secret=os.getenv("KRAKEN_API_SECRET") or "",
             environment=KrakenEnvironment.SPOT,
             dry_run=dry_run,
         ))
@@ -82,8 +130,8 @@ class PaperTradingSystem:
         
         if os.getenv("KRAKEN_FUTURES_API_KEY"):
             self.kraken_futures = KrakenExecutor(KrakenConfig(
-                api_key=os.getenv("KRAKEN_FUTURES_API_KEY"),
-                api_secret=os.getenv("KRAKEN_FUTURES_API_SECRET"),
+                api_key=os.getenv("KRAKEN_FUTURES_API_KEY") or "",
+                api_secret=os.getenv("KRAKEN_FUTURES_API_SECRET") or "",
                 passphrase=os.getenv("KRAKEN_FUTURES_PASSPHRASE", ""),
                 environment=KrakenEnvironment.FUTURES,
                 dry_run=dry_run,
@@ -91,19 +139,8 @@ class PaperTradingSystem:
             await self.kraken_futures.initialize()
         else:
             print("[System] Futures API not configured — BTC funding strategy disabled")
-        
-        # Core agents
-        self.agents['data'] = DataAgent(self.bus, symbols=["BTC/USDT", "ETH/USDT", "SOL/USDT"], exchange_id="kraken")
-        self.agents['quant'] = QuantAgent(self.bus, self.config)
-        self.agents['risk'] = RiskAgent(self.bus, self.config)
-        if self.storage:
-            self.agents['risk'].set_storage(self.storage)
-        self.agents['execution'] = ExecutionAgent(self.bus, self.config, dry_run=dry_run)
-        # live only: dry-run positions are simulated and don't exist on Kraken
-        self.agents['orchestrator'] = Orchestrator(
-            self.bus, self.config, exchange=None if dry_run else self.kraken_spot,
-            store=RedisHoldingsStore(self.bus.client, holdings_key(dry_run)))
-        
+
+    async def _init_remaining_agents(self):
         # Storage agent (persists signals/trades/market data to PostgreSQL)
         if self.storage:
             self.agents['storage'] = StorageAgent(self.bus, self.storage)
@@ -112,7 +149,7 @@ class PaperTradingSystem:
         llm_agents = create_llm_agents(self.bus, self.config)
         self.agents.update(llm_agents)
         
-        # BTC Funding Strategy (needs a real futures client for the perp hedge)
+        # BTC Funding Strategy (needs a real Kraken futures client for the perp hedge; not with Alpaca)
         if self.kraken_futures:
             self.agents['btc_funding'] = await create_btc_funding_strategy(
                 self.bus, self.config, self.kraken_spot, self.kraken_futures,
@@ -164,7 +201,8 @@ class PaperTradingSystem:
     
     async def _publish_status(self):
         """Mode and analysis schedule for the dashboard's decision band"""
-        await self.bus.client.set("system:mode", "live" if live_trading_enabled() else "dry_run")
+        mode = "paper" if self.broker_name == "alpaca" else "live" if live_trading_enabled() else "dry_run"
+        await self.bus.client.set("system:mode", mode)
         await self.bus.client.set("system:analysis_interval", str(ANALYSIS_INTERVAL_S))
     
     async def _heartbeat_loop(self):
@@ -309,7 +347,8 @@ async def main():
 
 if __name__ == "__main__":
     # Check required env vars
-    required = ["KRAKEN_API_KEY", "KRAKEN_API_SECRET"]
+    required = (["ALPACA_API_KEY", "ALPACA_SECRET_KEY"] if broker_choice() == "alpaca"
+                else ["KRAKEN_API_KEY", "KRAKEN_API_SECRET"])
     missing = [v for v in required if not os.getenv(v)]
     
     if missing:
@@ -317,5 +356,5 @@ if __name__ == "__main__":
         print("Add them to your .env file")
         sys.exit(1)
     
-    print("🚀 Starting Paper Trading System with BTC Funding Strategy...")
+    print(f"🚀 Starting the trading system (broker: {broker_choice()})...")
     asyncio.run(main())

@@ -486,7 +486,9 @@ function verdict(coins) {
 function renderStamp() {
   const el = $('stamp');
   el.className = 'stamp' + (band.mode === 'live' ? ' live' : '');
-  el.textContent = band.mode === 'live' ? 'Live: real money' : band.mode === 'dry_run' ? 'Simulated orders' : 'Mode unknown';
+  el.textContent = band.mode === 'live' ? 'Live: real money'
+    : band.mode === 'paper' ? 'Paper trading (Alpaca)'
+    : band.mode === 'dry_run' ? 'Simulated orders' : 'Mode unknown';
 }
 
 function renderSchedule() {
