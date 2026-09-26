@@ -1,10 +1,28 @@
 """
 Quant Agent - Technical analysis signals
 """
+import asyncio
+
 from hybrid.agent_base import BaseAgent
 from hybrid.messaging import MessageBus, Channel
 from hybrid.config import HybridConfig
 from hybrid.pipeline import HybridPipeline
+
+
+# Quote currencies that Yahoo Finance prices crypto in as plain USD
+_USD_QUOTES = {"USD", "USDT", "USDC"}
+
+
+def market_data_symbol(ticker: str) -> str:
+    """Exchange pair (BTC/USDT, XBT/USD) -> Yahoo Finance symbol (BTC-USD) for price data.
+
+    Orders keep the exchange pair; only the price-data download uses this symbol.
+    """
+    if "/" not in ticker:
+        return ticker
+    base, quote = ticker.upper().split("/", 1)
+    base = "BTC" if base == "XBT" else base
+    return f"{base}-{'USD' if quote in _USD_QUOTES else quote}"
 
 
 class QuantAgent(BaseAgent):
@@ -29,7 +47,8 @@ class QuantAgent(BaseAgent):
         data = payload["data"]
         ticker = data["ticker"]
         
-        result = self.pipeline.analyze_quant_only(ticker)
+        # yfinance download + indicator math is blocking; keep the event loop free
+        result = await asyncio.to_thread(self.pipeline.analyze_quant_only, market_data_symbol(ticker))
         
         self.bus.publish(Channel.SIGNALS, {
             "type": "quant_decision",

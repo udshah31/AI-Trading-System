@@ -52,6 +52,10 @@ class LLMSignals:
     trader_action_score: float = 0.5
     portfolio_decision_score: float = 0.5
 
+    # True only when extracted from a real TradingAgents run. Defaults (skipped or
+    # failed LLM analysis) are placeholders, not a neutral opinion.
+    available: bool = False
+
     # Raw metadata for logging
     sentiment_band: str = "neutral"
     sentiment_confidence: str = "low"
@@ -81,7 +85,7 @@ def extract_signals(final_state: dict) -> LLMSignals:
     Returns:
         LLMSignals with all scores normalized to [0.0, 1.0].
     """
-    signals = LLMSignals()
+    signals = LLMSignals(available=True)
 
     # ── 1. Sentiment Score ──
     # TradingAgents' sentiment_analyst outputs a SentimentReport with

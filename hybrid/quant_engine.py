@@ -109,8 +109,15 @@ def compute_decision(
     decision.quant_component = quant_weighted
 
     # ── Step 3: Composite Score ──
-    # Simply add both weighted components (weights already sum to 1.0)
-    decision.composite_score = llm_weighted + quant_weighted
+    if not llm_signals.available:
+        # No LLM data (quant-only mode or LLM failure). Scoring the missing track as a
+        # neutral 0.5 would pin the composite to [0.375, 0.625], inside both thresholds,
+        # so every decision would be HOLD. Use the technical track on its own 0-1 scale.
+        decision.llm_component = 0.0
+        decision.composite_score = quant_weighted / quant_total_weight
+    else:
+        # Simply add both weighted components (weights already sum to 1.0)
+        decision.composite_score = llm_weighted + quant_weighted
 
     # ── Step 4: Apply Decision Thresholds ──
     if decision.composite_score >= config.buy_threshold:
@@ -137,6 +144,11 @@ def compute_decision(
         decision.confidence = distance_to_center / max_distance if max_distance > 0 else 0.0
 
     # ── Step 5: Agreement Analysis ──
+    if not llm_signals.available:
+        decision.llm_quant_agreement = True  # nothing to disagree with; no size penalty
+        decision.agreement_detail = "LLM signals unavailable; decision from technical indicators only."
+        return decision
+
     # Check if LLM and quant components agree on direction
     llm_direction = (
         "bullish"

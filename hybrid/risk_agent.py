@@ -157,6 +157,8 @@ class RiskAgent(BaseAgent):
             "source": "risk_agent",
             "data": {
                 "ticker": ticker,
+                "action": decision.action,
+                "price": tech.current_price,
                 "approved": assessment.approved,
                 "rejection_reason": assessment.rejection_reason,
                 "position_size_usd": assessment.position_size_dollars,
