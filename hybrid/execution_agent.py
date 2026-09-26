@@ -115,7 +115,9 @@ class ExecutionAgent(BaseAgent):
             order_type=data.get("order_type", "market").lower(),
             volume=Decimal(str(data["volume"])),
             price=Decimal(str(data["price"])) if data.get("price") else None,
-            # not forwarded: Kraken's userref must be an int32; our id stays internal
+            # Kraken userref (int32) so orders can be found again after a crash; our
+            # client_order_id stays internal
+            client_order_id=str(data["userref"]) if data.get("userref") is not None else None,
             reduce_only=data.get("reduce_only", False)
         )
         
