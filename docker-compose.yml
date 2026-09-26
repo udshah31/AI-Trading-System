@@ -44,6 +44,8 @@ services:
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
+    secrets:
+      - dashboard_password  # basic auth for scraping the dashboard's /metrics
     depends_on:
       - redis
       - postgres
@@ -73,6 +75,9 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
+      - DASHBOARD_USER=${DASHBOARD_USER:-admin}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env}
+      - DASHBOARD_CORS_ORIGINS=${DASHBOARD_CORS_ORIGINS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,6 +126,10 @@ services:
         limits:
           cpus: '2'
           memory: 2G
+
+secrets:
+  dashboard_password:
+    environment: DASHBOARD_PASSWORD
 
 volumes:
   postgres_data:

@@ -3,15 +3,18 @@ Comprehensive Trading System Dashboard
 Real-time monitoring UI for the entire trading system
 """
 import asyncio
+import base64
+import binascii
 import json
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from hybrid.config import HybridConfig
@@ -131,6 +134,9 @@ class SystemOverview(BaseModel):
 async def lifespan(app: FastAPI):
     global storage, redis_client
     
+    if not os.getenv("DASHBOARD_PASSWORD"):
+        raise RuntimeError("DASHBOARD_PASSWORD is not set; refusing to serve the dashboard without auth")
+    
     # Initialize storage
     storage = StorageService(DATABASE_URL)
     await storage.initialize()
@@ -158,19 +164,73 @@ async def lifespan(app: FastAPI):
     print("[Dashboard] Stopped")
 
 
+class BasicAuthMiddleware:
+    """HTTP Basic auth for every HTTP and WebSocket route except PUBLIC_PATHS.
+
+    Credentials come from DASHBOARD_USER (default "admin") / DASHBOARD_PASSWORD,
+    read per request. With no password configured every protected request is
+    refused, so a misconfigured deploy fails closed.
+    """
+
+    PUBLIC_PATHS = {"/health"}  # deploy health check
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket") or scope["path"] in self.PUBLIC_PATHS:
+            return await self.app(scope, receive, send)
+
+        password = os.getenv("DASHBOARD_PASSWORD", "")
+        if password and self._authorized(scope, os.getenv("DASHBOARD_USER", "admin"), password):
+            return await self.app(scope, receive, send)
+
+        if scope["type"] == "websocket":
+            await receive()  # websocket.connect
+            await send({"type": "websocket.close", "code": 1008})  # policy violation
+        elif not password:
+            await PlainTextResponse("Dashboard auth not configured", status_code=503)(scope, receive, send)
+        else:
+            await PlainTextResponse(
+                "Unauthorized", status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="Trading Dashboard"'},
+            )(scope, receive, send)
+
+    @staticmethod
+    def _authorized(scope, username: str, password: str) -> bool:
+        header = dict(scope.get("headers") or []).get(b"authorization", b"")
+        scheme, _, encoded = header.partition(b" ")
+        if scheme.lower() != b"basic":
+            return False
+        try:
+            user, _, given = base64.b64decode(encoded, validate=True).partition(b":")
+        except (binascii.Error, ValueError):
+            return False
+        # evaluate both comparisons so timing doesn't reveal which one failed
+        user_ok = secrets.compare_digest(user, username.encode())
+        password_ok = secrets.compare_digest(given, password.encode())
+        return user_ok and password_ok
+
+
 app = FastAPI(
     title="Trading System Dashboard",
     version="2.0.0",
     lifespan=lifespan
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(BasicAuthMiddleware)
+
+# The UI is same-origin, so CORS is off unless origins are listed explicitly.
+# Added after auth so it wraps it and can answer credential-less preflights.
+_cors_origins = [o.strip() for o in os.getenv("DASHBOARD_CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET"],
+        allow_headers=["Authorization"],
+    )
 
 
 # =============================================================================
@@ -491,6 +551,27 @@ async def get_positions_summary():
 
 
 # --- Equity Curve ---
+# Must precede /api/equity/{account}, which would otherwise capture "history".
+@app.get("/api/equity/history")
+async def get_equity_history(days: int = Query(30, le=365), account: str = "default"):
+    async with storage.db.session() as session:
+        from sqlalchemy import select
+        from hybrid.storage import EquityCurve
+        
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await session.execute(
+            select(EquityCurve)
+            .where(EquityCurve.account == account)
+            .where(EquityCurve.timestamp >= cutoff)
+            .order_by(EquityCurve.timestamp.asc())
+        )
+        points = result.scalars().all()
+        return {
+            "labels": [p.timestamp.isoformat() for p in points],
+            "data": [float(p.equity) for p in points]
+        }
+
+
 @app.get("/api/equity/{account}", response_model=List[EquityPoint])
 async def get_equity(account: str, days: int = Query(30, le=365)):
     async with storage.db.session() as session:
@@ -796,26 +877,6 @@ async def get_strategies():
 
 
 # --- Equity History ---
-@app.get("/api/equity/history")
-async def get_equity_history(days: int = Query(30, le=365), account: str = "default"):
-    async with storage.db.session() as session:
-        from sqlalchemy import select
-        from hybrid.storage import EquityCurve
-        
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        result = await session.execute(
-            select(EquityCurve)
-            .where(EquityCurve.account == account)
-            .where(EquityCurve.timestamp >= cutoff)
-            .order_by(EquityCurve.timestamp.asc())
-        )
-        points = result.scalars().all()
-        return {
-            "labels": [p.timestamp.isoformat() for p in points],
-            "data": [float(p.equity) for p in points]
-        }
-
-
 # --- Risk Metrics ---
 @app.get("/api/risk")
 async def get_risk_metrics():
