@@ -463,14 +463,15 @@ async def get_overview():
             active_strategies=4
         )
         
-        return SystemOverview(
-            metrics=metrics,
-            agents=agents,
-            recent_trades=recent_trades,
-            open_positions=open_positions,
-            recent_signals=recent_signals,
-            equity_curve=equity_curve
-        )
+        # the lists hold ORM rows, which the nested models only accept when read by attribute
+        return SystemOverview.model_validate({
+            "metrics": metrics,
+            "agents": agents,
+            "recent_trades": recent_trades,
+            "open_positions": open_positions,
+            "recent_signals": recent_signals,
+            "equity_curve": equity_curve,
+        }, from_attributes=True)
 
 
 # --- Trades ---
