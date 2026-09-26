@@ -297,7 +297,7 @@ async def metrics_broadcaster():
 
 
 # Agent message types the dashboard UI renders (see index.html ws.onmessage)
-RELAYED_SIGNAL_TYPES = {"equity_history", "strategy_update", "risk_update", "sniper_alert", "quant_decision"}
+RELAYED_SIGNAL_TYPES = {"equity_history", "strategy_update", "risk_update", "sniper_alert", "quant_decision", "log"}
 
 
 def relay_message(raw: str) -> Optional[dict]:
