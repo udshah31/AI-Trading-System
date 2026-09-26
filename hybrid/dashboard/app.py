@@ -11,10 +11,10 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from hybrid.config import HybridConfig
@@ -297,7 +297,7 @@ async def metrics_broadcaster():
 
 
 # Agent message types the dashboard UI renders (see index.html ws.onmessage)
-RELAYED_SIGNAL_TYPES = {"equity_history", "strategy_update", "risk_update", "sniper_alert"}
+RELAYED_SIGNAL_TYPES = {"equity_history", "strategy_update", "risk_update", "sniper_alert", "quant_decision"}
 
 
 def relay_message(raw: str) -> Optional[dict]:
@@ -1000,6 +1000,117 @@ async def get_live_strategies():
             "source": "static_config"
         }
     ]
+
+
+# --- Decision band: latest quant score per coin against the thresholds ---
+@app.get("/api/decision-band")
+async def decision_band():
+    from sqlalchemy import select
+    cfg = HybridConfig()
+    since = datetime.now(timezone.utc) - timedelta(days=1)
+    async with _db().db.session() as session:
+        result = await session.execute(
+            select(Signal).where(Signal.agent == "quant_agent", Signal.timestamp >= since)
+            .order_by(Signal.timestamp.desc()))
+        latest: Dict[str, Signal] = {}
+        for sig in result.scalars():
+            latest.setdefault(sig.symbol, sig)
+
+    async def status(key: str) -> Optional[str]:
+        try:
+            value = await _redis().get(key)
+        except Exception:
+            return None
+        return value.decode() if isinstance(value, bytes) else value
+
+    last = await status("system:last_analysis")
+    interval = await status("system:analysis_interval")
+    return {
+        "sell_threshold": cfg.sell_threshold,
+        "buy_threshold": cfg.buy_threshold,
+        "mode": await status("system:mode") or "unknown",
+        "last_analysis": float(last) if last else None,
+        "next_analysis": float(last) + float(interval) if last and interval else None,
+        "coins": [
+            {"symbol": s.symbol, "score": float(s.strength or 0.5), "action": s.action or "hold",
+             "confidence": float(s.confidence or 0), "at": s.timestamp.isoformat()}
+            for s in sorted(latest.values(), key=lambda s: s.symbol)
+        ],
+    }
+
+
+# --- LLM Signals panel: recorded analyses, human labels, extractor accuracy ---
+SignalName = Literal["sentiment", "fundamental", "news", "research_debate", "trader_action", "portfolio_decision"]
+
+
+class SignalLabelBody(BaseModel):
+    label: Literal["bearish", "neutral", "bullish"]
+
+
+def _analysis_summary(analysis, labelled: int) -> dict:
+    return {
+        "id": analysis.id,
+        "ticker": analysis.ticker,
+        "trade_date": analysis.trade_date,
+        "created_at": analysis.created_at.isoformat(),
+        "labelled": labelled,
+        "total": sum(1 for text in analysis.reports.values() if text),  # reports that exist to label
+    }
+
+
+@app.get("/api/llm/analyses")
+async def list_llm_analyses(limit: int = Query(50, ge=1, le=200)):
+    return [_analysis_summary(a, n) for a, n in await _db().llm.list_recent(limit)]
+
+
+@app.get("/api/llm/analyses/{analysis_id}")
+async def get_llm_analysis(analysis_id: str):
+    from hybrid.signal_eval import direction
+    from hybrid.signal_extractor import SIGNALS
+    analysis, labels = await _db().llm.get(analysis_id)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    cfg = HybridConfig()
+    # share of the hybrid decision each signal carries; trader/portfolio aren't weighted
+    weights = {"sentiment": cfg.weight_sentiment, "fundamental": cfg.weight_fundamental,
+               "news": cfg.weight_news, "research_debate": cfg.weight_research_debate}
+    return {
+        **_analysis_summary(analysis, len(labels)),
+        "signals": [
+            {
+                "signal": name,
+                "report": analysis.reports.get(name, ""),
+                "score": analysis.scores.get(name, 0.5),
+                "direction": direction(analysis.scores.get(name, 0.5)),
+                "source": analysis.sources.get(name, "unavailable"),
+                "confidence": analysis.confidences.get(name),
+                "label": labels.get(name),
+                "weight": weights.get(name),
+            }
+            for name in SIGNALS
+        ],
+    }
+
+
+@app.put("/api/llm/analyses/{analysis_id}/labels/{signal}")
+async def set_signal_label(analysis_id: str, signal: SignalName, body: SignalLabelBody):
+    analysis, _ = await _db().llm.get(analysis_id)
+    if analysis is None:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    await _db().llm.set_label(analysis_id, signal, body.label)
+    return {"signal": signal, "label": body.label}
+
+
+@app.delete("/api/llm/analyses/{analysis_id}/labels/{signal}", status_code=204)
+async def clear_signal_label(analysis_id: str, signal: SignalName):
+    await _db().llm.clear_label(analysis_id, signal)
+    return Response(status_code=204)
+
+
+@app.get("/api/llm/accuracy")
+async def llm_accuracy():
+    from hybrid.signal_eval import accuracy
+    return accuracy(await _db().llm.labelled_rows())
 
 
 # --- Sniper Alerts ---

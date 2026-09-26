@@ -35,6 +35,15 @@ RATING_SCORES = {
 TRADER_ACTION_SCORES = {"buy": 1.0, "hold": 0.5, "sell": 0.0}
 
 SIGNALS = ("sentiment", "fundamental", "news", "research_debate", "trader_action", "portfolio_decision")
+# The TradingAgents report each signal is read from (score attribute is f"{signal}_score")
+SIGNAL_REPORTS = {
+    "sentiment": "sentiment_report",
+    "fundamental": "fundamentals_report",
+    "news": "news_report",
+    "research_debate": "investment_plan",
+    "trader_action": "trader_investment_plan",
+    "portfolio_decision": "final_trade_decision",
+}
 
 # Outlook Score levels, ordered bearish -> bullish; score / 4 gives the 0-1 signal.
 OUTLOOK_LEVELS = [
@@ -76,6 +85,8 @@ class LLMSignals:
     trader_action: str = "hold"
     # How each signal was obtained: "label", "typesafe" or "unavailable" (left neutral)
     sources: dict = field(default_factory=dict)
+    # TypeSafe answer confidence (0-1) for signals it judged
+    confidences: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         """Human-readable summary of extracted signals."""
@@ -199,9 +210,11 @@ def _apply_judgments(signals: LLMSignals, asks: dict, judge: TypeSafeJudge) -> N
         if name in response.scores:
             apply(response.scores[name])
             signals.sources[name] = "typesafe"
+            signals.confidences[name] = response.scores[name].confidence
         elif name in response.choices and response.choices[name].choice != NO_RATING:
             apply(response.choices[name].choice)
             signals.sources[name] = "typesafe"
+            signals.confidences[name] = response.choices[name].confidence
 
 
 def _outlook_question(state_key: str, subject: str):

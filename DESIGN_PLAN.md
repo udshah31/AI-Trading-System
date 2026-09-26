@@ -1,142 +1,56 @@
-# AI-Trading-System Dashboard — Design Plan
+# Dashboard design: "The Auditor's Ledger"
 
-## Design Brief Summary
-**Product:** AI-Trading-System — Hybrid LLM + Quant trading system with paper/live trading  
-**Audience:** Quantitative traders, portfolio managers, risk analysts  
-**Primary Job:** Real-time monitoring of multi-strategy trading system, risk oversight, trade execution oversight  
-**Differentiator:** Hybrid LLM+Quant fusion, multi-strategy (BTC Funding, Sniper, RL, Quant), multi-exchange, mathematical risk guarantees
+**Who uses it:** one person running a personal crypto bot on a free VM, checking it over an SSH tunnel, sometimes late at night, sometimes on a phone.
+**Its job:** answer at a glance whether it's trading real money or simulating, what it just decided and why, and whether anything is near a safety limit. Then: the ledger of positions and trades, and auditing how the LLM reports were read.
 
----
+The bot keeps the books; you audit them. Visual choices come from bookkeeping, not from trading-terminal clichés.
 
-## Color Tokens (4 core + semantic)
+## Colour (meaning only, never decoration)
 
-| Name | Hex | Role |
-|------|-----|------|
-| `ink` | `#0A0E14` | Deep charcoal base — not pure black, has blue depth |
-| `paper` | `#E8ECEF` | Off-white with cool tint — readable, not sterile |
-| `muted` | `#6B7A8D` | Secondary text, borders, inactive states |
-| `signal` | `#00D4AA` | **Single accent** — precise teal for live/positive/active (P&L green, connected status, buy signals) |
-| `alert` | `#FF4D6A` | Danger/loss/sell/stop — only for losses, stops, errors |
-| `warning` | `#F5A623` | Caution/warning — funding rate thresholds, margin warnings |
+| Token | Light | Dark | Used for |
+|---|---|---|---|
+| paper | `#EDF0E4` ledger green | `#161B17` | background |
+| rule | `#BCC7AE` | `#33402F` | table column rules, totals rules |
+| ink | `#262B28` graphite | `#DCE3D3` | text, profit ("in the black"), the buy side |
+| ink-2 | `#636B5F` | `#8E9A88` | secondary text |
+| red ink | `#A8261B` | `#F07365` | losses (in parentheses), sells, breached limits, live-money stamp |
+| blue pencil | `#2250B8` | `#8DA9FF` | only your audit labels and marks, and keyboard focus |
+| highlighter | `#F4DF5A` | `#5E5215` | only "look at this": a limit near its cap, unlabelled work, neutral fallbacks |
 
-**No other colors.** No gradient washes. No soft shadows. No gradient text.
+## Type
 
-**Usage rules:**
-- `signal` = only for live/positive/buy/connected
-- `alert` = only for losses/stops/sells/errors
-- `warning` = only for thresholds approaching limits
-- `muted` = labels, inactive, secondary
-- `ink`/`paper` = primary text/background
+Atkinson Hyperlegible Next for everything (400/500/700): its glyphs keep 0/O and 1/l/I apart, which matters when 0.05 vs 0.06 BTC is real money. Atkinson Hyperlegible Mono only for keyboard hints and IDs. Scale: 12 / 14 / 16 / 21 / 28. Sentence case throughout; no all-caps labels, no eyebrows.
 
----
-
-## Typography
-
-**Single family: `IBM Plex Mono` + `IBM Plex Sans`** (same family, two cuts)
-
-| Role | Font | Size/Weight | Line Height |
-|------|------|-------------|-------------|
-| Display / Hero metric | `IBM Plex Sans` | 72px / 600 | 1.05 |
-| Headline / Section | `IBM Plex Sans` | 24px / 500 | 1.2 |
-| Body / UI | `IBM Plex Sans` | 14px / 400 | 1.5 |
-| Data / Numbers / Tables / Code | `IBM Plex Mono` | 13px / 400 | 1.6 |
-| Labels / Meta | `IBM Plex Sans` | 11px / 500 | 1.4 (uppercase, 0.05em tracking) |
-
-**No other weights.** No italics. No all-caps for headlines. Tracking only on labels (0.05em).
-
-**Line length:** Max 75ch for body. Tables use `IBM Plex Mono` at 13px for alignment.
-
----
-
-## Layout Concept
-
-**Concept: "Trading Terminal Clarity" — Left-aligned, density with breathing room**
+## Layout
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  HERO: Live P&L / Equity Curve (full width, 280px tall)             │
-│  ┌──────────────────┬──────────────────┬──────────────────┐        │
-│  │  EQUITY  $124,847 │ DAILY P&L +2,341 │  OPEN POS  3      │  <- 3 KPIs   │
-│  │  +1.9%            │  +1.9%           │  $12,400 exp      │     (dense)  │
-│  └──────────────────┴──────────────────┴──────────────────┘        │
-├─────────────────────────────────────────────────────────────────────┤
-│  EQUITY CURVE (full width, 200px) — live streaming, no legend      │
-├─────────────────────┬──────────────────────────────────────────────┤
-│  STRATEGIES         │  POSITIONS TABLE (dense, mono)               │
-│  (vertical list)    │  ┌────┬──────┬─────┬──────┬──────┬──────┐  │
-│  ● BTC Funding      │  │SYM │ SIDE │ QTY │ ENTRY│ MARK │ P&L  │  │
-│    ACTIVE  |  +42bps│  │BTC │ LONG │ 0.5 │ 67,200│68,100│+450  │  │
-│    10bps/8h | APR45%│  │ETH │ SHORT│ 2.0 │ 3,420 │3,380 │ +80  │  │
-│    Basis 6.3bps     │  │SOL │ LONG │ 50  │  142  │ 145  │+150  │  │
-│                     │  └────┴──────┴─────┴──────┴──────┴──────┘  │
-│  ● Sniper Bot       │  RECENT TRADES (last 10, mono)            │
-│    STANDBY          │  (same table density)                      │
-│                     │                                            │
-│  ● RL Agent         │  AGENT STATUS (compact list)              │
-│    TRAINING         │  ● openagent      CONNECTED  2m ago       │
-│                     │  ● contextscout   CONNECTED  1m ago       │
-│                     │  ● risk_agent     CONNECTED  30s ago      │
-└─────────────────────┴──────────────────────────────────────────────┘
+Trading ledger                                   Live feed connected
+══════════════════════════════════════════════════════════════════
+Holding. SOL is closest, 0.10 from the buy line.   [Simulated orders]
+Next check in about 3 minutes.
+            SOL
+       ETH   │
+  BTC   │    │
+▨▨▨▨▨▨▨▨│    │    │    │            ▧▧▧▧▧▧▧▧▧▧▧   Sell ≤ .35   Buy ≥ .65
+────────┼────●────●────●────────────┼─────────────
+Balance + sparkline                      │ Safety limits (meters)
+Open positions   (single rule, total,    │ Agents
+                  double rule)           │ Strategies
+Recent trades                            │ New-token watch
+══════════════════════════════════════════════════════════════════
+Audit the LLM readings: runs │ readings with weight, score, source,
+                             │ your label (blue pencil)  ✓ / ✗
+Accuracy by method  │  TypeSafe accuracy by confidence
+▸ Activity log (collapsed)
 ```
 
-**Alignment:** Left-aligned throughout. No centered content except hero metric.  
-**Density:** Tables use 8px row padding, 12px column gaps. No card padding waste.  
-**Scrolling:** Only the positions/trades/agents panes scroll. Hero + equity curve fixed.  
-**Responsive:** < 900px → stack strategy list above tables, keep hero full width.
+Left-aligned text; numbers right-aligned in tabular figures. Under 600px the band keeps its pins and moves coin names into a list below it; tables scroll inside their own box.
 
----
+## Principles
 
-## Principles (What Makes This Unique)
-
-1. **Data First, Chrome Last** — No decorative cards, no borders for decoration, no shadow decoration. Tables are the UI. The grid *is* the design.
-
-2. **One Accent, Three States** — `signal` (teal) = live/positive/buy, `alert` (red) = loss/stop/sell, `warning` (amber) = threshold. No other colors carry meaning.
-
-3. **Terminal Density, Modern Clarity** — Monospace tables with precise alignment (like Bloomberg/Reuters terminals), but clean `IBM Plex` type, generous line-height, no visual noise.
-
-4. **Live First, Static Never** — Hero metric streams. Equity curve streams. Tables update in place. No "last updated" timestamps — if it's stale, it shows stale.
-
-4. **Risk Visible, Not Hidden** — Drawdown, margin, position risk always visible in hero KPIs. No drilling down to find risk.
-
-5. **No Decoration** — No rounded cards, no soft shadows, no gradient washes, no decorative borders. The data *is* the visual language.
-
-6. **Left-Aligned, Mono-Spaced Data** — Numbers align on decimal. Columns align. Scanning is instant.
-
----
-
-## Self-Critique Checklist (Pre-Build)
-
-- [ ] No warm cream / terracotta default palette
-- [ ] No near-black + acid green default
-- [ ] No broadsheet newspaper columns
-- [ ] No SaaS card kit (rounded cards, soft shadows, gradient washes)
-- [ ] No ALL-CAPS eyebrow labels above headings
-- [ ] No `→` appended to buttons/links
-- [ ] No single-word accent in headlines
-- [ ] No tinted near-black (#0B0B0B) standing in for black
-- [ ] No monospace for small labels only — mono for *all* data
-- [ ] No numbered markers (01/02/03) unless actual sequence
-- [ ] No fade/slide-up on every section
-- [ ] No hover transitions on every card
-- [ ] Hero is live P&L/equity, not a big number with small label
-
----
-
-## Build Notes (Technical)
-
-- **CSS:** Custom properties for tokens. No framework utility classes.
-- **Charts:** Chart.js but styled to match tokens — no default colors, no legends, minimal gridlines.
-- **Tables:** `<table>` with `IBM Plex Mono`, `table-layout: fixed`, decimal alignment via `text-align: right` + `tabular-nums`.
-- **WebSocket:** Hero + tables update in place via `data-*` attributes, no re-render flash.
-- **Responsive:** CSS Grid for layout, media query at 900px stacks strategy column.
-- **Accessibility:** `prefers-reduced-motion` respected, focus-visible outlines in `signal`, WCAG AA contrast.
-
----
-
-## Copy Guidelines
-
-- **No selling language.** "Live P&L" not "Your Profit Dashboard"
-- **Active verbs.** "Close Position" not "Submit Close"
-- **Plain terms.** "Open Positions" not "Current Exposure"
-- **Errors direct.** "Order rejected: insufficient margin" not "Something went wrong"
-- **Empty states directive.** "No open positions. Deploy a strategy to begin." not "No data"
+1. **The decision band is the one showpiece**: every coin's latest score between the sell and buy lines, with a sentence saying what that means. Everything else is quiet bookkeeping.
+2. **Bookkeeping conventions carry meaning**: red ink and parentheses for losses; a single rule above a total and a double rule under it.
+3. **Real money is loud, simulation is quiet**: a red "Live: real money" stamp is the only saturated block on the page.
+4. **Plain sentences over labels**: "Holding. SOL is closest…", "Trading halted: the drawdown limit was hit."
+5. **Motion only answers change**: a coin's mark slides when its score updates; nothing animates on load. Reduced motion is respected.
+6. **Untrusted text is escaped**: LLM reports and API strings are always HTML-escaped.
