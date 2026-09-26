@@ -181,13 +181,15 @@ class Orchestrator(BaseAgent):
                     self.holdings[ticker] = filled
                     if _valid_stop(order.get("stop")):
                         self.stops[ticker] = float(order["stop"])
+                    await self._sync_to_broker(ticker)
                 else:
                     remaining = self.holdings.get(ticker, 0.0) - filled
-                    if remaining > 0:
+                    if remaining > 1e-12 and not self._is_dust(remaining, order.get("price")):
                         self.holdings[ticker] = remaining
                     else:
                         self.holdings.pop(ticker, None)
                         self.stops.pop(ticker, None)
+                        self.portfolio.set_volume(ticker, 0.0)
                 await self._persist(ticker)
                 print(f"[Orchestrator] Recovered in-flight {side} {ticker}: filled {filled} on Kraken")
             else:
@@ -245,14 +247,17 @@ class Orchestrator(BaseAgent):
                 self.holdings[ticker] = self.holdings.get(ticker, 0.0) + filled
                 if _valid_stop(order.get("stop")):
                     self.stops[ticker] = float(order["stop"])
+                await self._sync_to_broker(ticker)
             else:
                 remaining = self.holdings.get(ticker, 0.0) - filled
-                if remaining > 1e-12:  # partial sell: the rest stays, stop included
-                    self.holdings[ticker] = remaining
+                price = data.get("avg_price") or self._last_prices.get(ticker) or order.get("price")
+                if remaining > 1e-12 and not self._is_dust(remaining, price):
+                    self.holdings[ticker] = remaining  # partial sell: the rest stays, stop included
                 else:
                     self.holdings.pop(ticker, None)
                     self.stops.pop(ticker, None)
                     self._stop_retry_at.pop(ticker, None)
+                    self.portfolio.set_volume(ticker, 0.0)  # leftover dust is not a position
             await self._persist(ticker)  # position first, so a crash here is re-settled on start
         elif order.get("reason") == "stop-loss":
             self._stop_retry_at[ticker] = self._clock() + STOP_RETRY_S
@@ -412,6 +417,28 @@ class Orchestrator(BaseAgent):
         except Exception as e:
             print(f"[Orchestrator] ⚠️ Could not save position for {ticker} ({e}); "
                   "it is tracked in memory only and won't survive a restart")
+
+    @staticmethod
+    def _is_dust(volume: float, price) -> bool:
+        """Too small to trade or to count as a position (e.g. a fee's worth left after a sell)."""
+        return bool(price) and volume * float(price) < MIN_POSITION_USD
+
+    async def _sync_to_broker(self, ticker: str) -> None:
+        """After a buy, hold what the broker actually credited: Alpaca takes its crypto fee in
+        the coin, so 0.0005 BTC bought is ~0.000499 held. Selling the booked 0.0005 would fail."""
+        if not self.broker:
+            return
+        try:
+            actual = await self._spot_balance(ticker)
+        except Exception as e:
+            print(f"[Orchestrator] ⚠️ Couldn't confirm the {ticker} position after the buy ({e}); "
+                  "keeping the filled amount")
+            return
+        booked = self.holdings.get(ticker, 0.0)
+        if 0 < actual < booked:  # never more than we booked: the rest of the account isn't the bot's
+            self.holdings[ticker] = actual
+            self.portfolio.set_volume(ticker, actual)
+            await self._portfolio_changed(force=True)
 
     async def _spot_balance(self, ticker: str) -> float:
         """Base-asset spot balance on Kraken (total, including amounts held by open orders)."""
