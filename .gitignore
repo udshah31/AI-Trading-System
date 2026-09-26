@@ -13,3 +13,5 @@ __pycache__/
 .DS_Store
 # logs
 *.log
+# local AI-agent tooling (OpenCode)
+.opencode/
