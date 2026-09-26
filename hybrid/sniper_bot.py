@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from hybrid.agent_base import BaseAgent
 from hybrid.messaging import MessageBus, Channel
-from hybrid.config import HybridConfig
+from hybrid.config import HybridConfig, live_trading_enabled
 from hybrid.dex_executor import (
     MultiChainExecutor, SniperExecutionEngine,
     Chain, QuoteRequest, DexExecutorFactory
@@ -185,6 +185,9 @@ class SniperBot(BaseAgent):
             "data": {"positions": positions}
         }, self.name)
     
+    async def handle_message(self, payload: dict):
+        pass
+    
     async def start(self):
         print(f"[Sniper] Starting on chains: {self.chains}")
         
@@ -298,6 +301,10 @@ class SniperBot(BaseAgent):
         # Emit sniper alert for new token detection
         await self._emit_sniper_alert(token, "detected")
         
+        if not live_trading_enabled():
+            print(f"  [DRY-RUN] Would snipe ${self.max_position_usd} — no swap sent (LIVE_TRADING not set)")
+            return
+        
         print(f"  🎯 SNIPING ${self.max_position_usd}...")
         
         try:
@@ -363,7 +370,7 @@ class SniperBot(BaseAgent):
                     "price_impact_pct": result.price_impact_pct
                 }
             
-            await self.bus.publish("signals", alert_data, "sniper_bot")
+            self.bus.publish(Channel.SIGNALS, alert_data, "sniper_bot")
         except Exception as e:
             print(f"[Sniper] Emit error: {e}")
 

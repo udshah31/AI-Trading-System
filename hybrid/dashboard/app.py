@@ -138,11 +138,21 @@ async def lifespan(app: FastAPI):
     # Initialize Redis
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     
+    # on_event("startup") handlers are ignored when lifespan= is set, so start tasks here
+    tasks = [
+        asyncio.create_task(metrics_broadcaster()),
+        asyncio.create_task(update_redis_cache()),
+        asyncio.create_task(signals_relay()),
+    ]
+    
     print("[Dashboard] Started on http://localhost:8000")
     
     yield
     
     # Cleanup
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
     await storage.close()
     await redis_client.close()
     print("[Dashboard] Stopped")
@@ -210,6 +220,45 @@ async def metrics_broadcaster():
                     })
         except Exception as e:
             print(f"Broadcast error: {e}")
+        await asyncio.sleep(2)
+
+
+# Agent message types the dashboard UI renders (see index.html ws.onmessage)
+RELAYED_SIGNAL_TYPES = {"equity_history", "strategy_update", "risk_update", "sniper_alert"}
+
+
+def relay_message(raw: str) -> Optional[dict]:
+    """Turn a MessageBus envelope from Redis into a WebSocket message, or None to drop it."""
+    try:
+        payload = json.loads(raw).get("payload", {})
+    except (json.JSONDecodeError, AttributeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("type") not in RELAYED_SIGNAL_TYPES:
+        return None
+    return {"type": payload["type"], "data": payload.get("data", {})}
+
+
+async def signals_relay():
+    """Forward agent updates published on the Redis 'signals' channel to WebSocket clients"""
+    while True:
+        pubsub = None
+        try:
+            pubsub = redis_client.pubsub()
+            await pubsub.subscribe("signals")
+            async for msg in pubsub.listen():
+                if msg.get("type") != "message":
+                    continue
+                out = relay_message(msg["data"])
+                if out:
+                    await manager.broadcast(out)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"Signals relay error: {e}")
+            await asyncio.sleep(5)
+        finally:
+            if pubsub is not None:
+                await pubsub.aclose()
 # =============================================================================
 # API ENDPOINTS
 # =============================================================================
@@ -706,11 +755,7 @@ async def update_redis_cache():
 # Add missing import
 from sqlalchemy import func, case
 
-# Start background tasks
-@app.on_event("startup")
-async def startup_tasks():
-    asyncio.create_task(metrics_broadcaster())
-    asyncio.create_task(update_redis_cache())
+# Background tasks are started in lifespan()
 
 
 # --- Strategies ---

@@ -16,6 +16,10 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "TradingAgents", ".env"))
 
 
+def live_trading_enabled() -> bool:
+    """Real orders (Kraken, DEX swaps) require an explicit opt-in: LIVE_TRADING=true."""
+    return os.getenv("LIVE_TRADING", "").strip().lower() == "true"
+
 
 @dataclass
 class HybridConfig:

@@ -4,8 +4,13 @@ Execution Agent - Routes orders to Kraken/Alpaca
 from decimal import Decimal
 from hybrid.agent_base import BaseAgent
 from hybrid.messaging import MessageBus, Channel
-from hybrid.config import HybridConfig
-from hybrid.kraken_executor import KrakenExecutor, KrakenConfig, KrakenEnvironment, OrderRequest
+from hybrid.config import HybridConfig, live_trading_enabled
+from hybrid.kraken_executor import (
+    KrakenConfig,
+    KrakenEnvironment,
+    KrakenExecutor,
+    OrderRequest,
+)
 
 
 class ExecutionAgent(BaseAgent):
@@ -22,14 +27,17 @@ class ExecutionAgent(BaseAgent):
         pass
     
     async def start(self):
-        from hybrid.kraken_executor import KrakenExecutor, KrakenConfig, KrakenEnvironment
         import os
+        
+        # dry_run=True always wins; going live also requires LIVE_TRADING=true
+        kraken_dry_run = self.dry_run or not live_trading_enabled()
         
         if os.getenv("KRAKEN_API_KEY"):
             spot_config = KrakenConfig(
                 api_key=os.getenv("KRAKEN_API_KEY"),
                 api_secret=os.getenv("KRAKEN_API_SECRET"),
-                environment=KrakenEnvironment.SPOT
+                environment=KrakenEnvironment.SPOT,
+                dry_run=kraken_dry_run,
             )
             self.kraken_spot = KrakenExecutor(spot_config)
             await self.kraken_spot.initialize()
@@ -39,18 +47,16 @@ class ExecutionAgent(BaseAgent):
                 api_key=os.getenv("KRAKEN_FUTURES_API_KEY"),
                 api_secret=os.getenv("KRAKEN_FUTURES_API_SECRET"),
                 passphrase=os.getenv("KRAKEN_FUTURES_PASSPHRASE", ""),
-                environment=KrakenEnvironment.FUTURES
+                environment=KrakenEnvironment.FUTURES,
+                dry_run=kraken_dry_run,
             )
             self.kraken_futures = KrakenExecutor(futures_config)
             await self.kraken_futures.initialize()
-        else:
-            self.kraken_futures = self.kraken_spot
         
         if not self.dry_run:
             from hybrid.execution import AlpacaExecutor
             self.alpaca = AlpacaExecutor(self.config, dry_run=False)
         
-        self.bus.subscribe(Channel.ORDERS, self._on_execution_request)
         print("[ExecutionAgent] Started")
     
     async def stop(self):
@@ -58,9 +64,6 @@ class ExecutionAgent(BaseAgent):
             await self.kraken_spot.close()
         if self.kraken_futures and self.kraken_futures != self.kraken_spot:
             await self.kraken_futures.close()
-    
-    async def handle_message(self, payload: dict):
-        pass
     
     async def _on_execution_request(self, payload: dict):
         if payload.get("type") != "execute_order":
@@ -90,10 +93,11 @@ class ExecutionAgent(BaseAgent):
         is_crypto = "/" in symbol or "-" in symbol or asset_type == "crypto"
         is_futures = "PERP" in symbol.upper() or asset_type == "futures"
         
-        if is_crypto and self.kraken_futures:
-            return "kraken_futures"
-        elif is_crypto and self.kraken_spot:
-            return "kraken_spot"
+        if is_futures:
+            return "kraken_futures" if self.kraken_futures else None
+        if is_crypto:
+            # spot orders never fall back to the perp market
+            return "kraken_spot" if self.kraken_spot else None
         elif self.alpaca:
             return "alpaca"
         elif self.kraken_spot:
