@@ -34,6 +34,11 @@ def live_trading_enabled() -> bool:
     return os.getenv("LIVE_TRADING", "").strip().lower() == "true"
 
 
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    return float(value) if value not in (None, "") else default
+
+
 @dataclass
 class HybridConfig:
     """Configuration for the hybrid LLM + Quant trading system."""
@@ -54,11 +59,11 @@ class HybridConfig:
     buy_threshold: float = 0.65
     sell_threshold: float = 0.35
 
-    # ── Risk Management (Mathematical — NO LLM) ──
-    max_position_pct: float = 0.20
-    max_risk_per_trade_pct: float = 0.02
-    max_drawdown_pct: float = 0.15
-    initial_capital: float = 100_000.0
+    # ── Risk Management (Mathematical — NO LLM); overridable from .env ──
+    max_position_pct: float = field(default_factory=lambda: _env_float("MAX_POSITION_PCT", 0.20))
+    max_risk_per_trade_pct: float = field(default_factory=lambda: _env_float("MAX_RISK_PER_TRADE", 0.02))
+    max_drawdown_pct: float = field(default_factory=lambda: _env_float("MAX_DRAWDOWN_PCT", 0.15))
+    initial_capital: float = field(default_factory=lambda: _env_float("INITIAL_CAPITAL", 100_000.0))
 
     # ── Technical Indicator Parameters ──
     rsi_period: int = 14

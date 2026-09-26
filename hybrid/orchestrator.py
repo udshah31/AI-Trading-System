@@ -2,15 +2,21 @@
 Orchestrator - Coordinates analysis schedule and turns approved decisions into orders
 """
 import json
+from typing import Optional
 import secrets
 import time
 import uuid
 
+from datetime import datetime, timezone
+
 from hybrid.agent_base import BaseAgent
 from hybrid.messaging import MessageBus, Channel
+from hybrid.portfolio import Portfolio
 
 MIN_POSITION_USD = 10.0  # a smaller balance is dust, not a position
 STOP_RETRY_S = 30.0      # after a failed stop-loss exit, wait this long before trying again
+PORTFOLIO_PUBLISH_S = 5.0  # price-driven portfolio updates to the risk agent/dashboard, at most this often
+PORTFOLIO_SAVE_S = 30.0    # price-driven saves of the books, at most this often (fills save at once)
 
 
 def kraken_balance_codes(ticker: str) -> set[str]:
@@ -63,6 +69,14 @@ class RedisHoldingsStore:
     async def remove_stop(self, ticker: str) -> None:
         await self.client.hdel(f"{self.key}:stops", ticker)
 
+    # The bot's books (cash, positions, peak), so a restart keeps the high-water mark
+    async def load_portfolio(self) -> Optional[dict]:
+        state = (await self.client.hgetall(f"{self.key}:portfolio")).get("state")
+        return json.loads(state) if state else None
+
+    async def save_portfolio(self, state: dict) -> None:
+        await self.client.hset(f"{self.key}:portfolio", "state", json.dumps(state))
+
     # Orders sent but not yet confirmed, written before sending (write-ahead)
     async def load_pending(self) -> dict[str, dict]:
         return {cid: json.loads(order) for cid, order in (await self.client.hgetall(f"{self.key}:pending")).items()}
@@ -99,6 +113,10 @@ class Orchestrator(BaseAgent):
     position and saved like it. Every live price tick is checked; when the bid (or
     last price) reaches the stop, the position is sold at market straight away. One
     exit at a time; a failed exit is retried after STOP_RETRY_S.
+
+    Books: every fill and live price updates ``portfolio`` (cash, positions, equity,
+    peak, drawdown). It is published as ``portfolio_update`` for the risk agent and the
+    dashboard, and each fill as ``trade_filled`` with its realised P&L.
     """
 
     def __init__(self, bus: MessageBus, config, exchange=None, store=None, clock=time.monotonic):
@@ -112,6 +130,9 @@ class Orchestrator(BaseAgent):
         self.stops: dict[str, float] = {}     # ticker -> stop-loss price for the bot's position
         self._stop_retry_at: dict[str, float] = {}  # ticker -> earliest retry after a failed exit
         self._clock = clock
+        self.portfolio = Portfolio(config.initial_capital)
+        self._last_prices: dict[str, float] = {}
+        self._last_publish = self._last_save = float("-inf")
         self.bus.subscribe(Channel.SIGNALS, self._on_signal)
         self.bus.subscribe(Channel.ORDERS, self._on_order)
         self.bus.subscribe(Channel.MARKET_DATA, self._on_market_data)
@@ -127,6 +148,7 @@ class Orchestrator(BaseAgent):
                 print(f"[Orchestrator] Restored bot positions: {self.holdings or 'none'}; stops: {self.stops or 'none'}")
             except Exception as e:
                 print(f"[Orchestrator] ⚠️ Could not load saved positions ({e}); starting with none")
+            await self._load_portfolio()
             await self._reconcile_pending()
             for ticker in self.holdings:
                 if ticker not in self.stops:
@@ -158,6 +180,8 @@ class Orchestrator(BaseAgent):
                 print(f"[Orchestrator] ⚠️ {side} {ticker} still open on Kraken; not trading it until it settles")
                 continue
             filled = sum(o["vol_exec"] for o in found)
+            if filled > 0 and order.get("price"):
+                self.portfolio.apply_fill(ticker, side, filled, float(order["price"]))
             if filled > 0:
                 if side == "buy":
                     self.holdings[ticker] = filled
@@ -217,6 +241,7 @@ class Orchestrator(BaseAgent):
             return
         ticker = order["ticker"]
         if data["success"]:
+            await self._book_fill(order, data)
             if order["side"] == "buy":
                 self.holdings[ticker] = order["volume"]
                 if _valid_stop(order.get("stop")):
@@ -233,10 +258,16 @@ class Orchestrator(BaseAgent):
         await self._forget_pending(cid)
 
     async def _on_market_data(self, payload: dict):
-        """Sell a position the moment its price reaches the stop-loss."""
+        """Value the books at live prices; sell a position the moment it reaches its stop-loss."""
         ticker = payload.get("symbol")
         if not isinstance(ticker, str):
             return
+        mark = payload.get("bid") or payload.get("price")  # what a sell would fetch
+        if mark:
+            self._last_prices[ticker] = float(payload.get("price") or mark)
+            self.portfolio.roll_day(datetime.now(timezone.utc).date())
+            self.portfolio.mark(ticker, float(mark))
+            await self._portfolio_changed(force=False)
         stop = self.stops.get(ticker)
         if stop is None or not self.holdings.get(ticker):
             return
@@ -270,6 +301,51 @@ class Orchestrator(BaseAgent):
                 return
         self._notify(f"Stop-loss hit: {ticker} at {price:,.2f} (stop {stop:,.2f}). Selling {held}.", level="error")
         await self._send_order(ticker, "sell", held, {"price": price}, reason="stop-loss")
+
+    async def _book_fill(self, order: dict, data: dict):
+        """Record a fill in the books at the best price known for it."""
+        ticker, side, volume = order["ticker"], order["side"], float(order["volume"])
+        # exchange-reported fill price, else the latest live tick, else the order's (possibly stale) price
+        price = data.get("avg_price") or self._last_prices.get(ticker) or order.get("price")
+        if not price:
+            print(f"[Orchestrator] ⚠️ No price for the {side} fill of {ticker}; books not updated")
+            return
+        realised = self.portfolio.apply_fill(ticker, side, volume, float(price))
+        self.bus.publish(Channel.SIGNALS, {"type": "trade_filled", "source": self.name, "data": {
+            "symbol": ticker, "side": side, "volume": volume, "price": float(price), "realized_pnl": realised,
+            "client_order_id": data.get("client_order_id"), "reason": order.get("reason", "decision"),
+            "exchange": data.get("exchange", ""),
+        }}, self.name)
+        await self._portfolio_changed(force=True)
+
+    async def _portfolio_changed(self, force: bool):
+        now = self._clock()
+        if force or now - self._last_publish >= PORTFOLIO_PUBLISH_S:
+            self._last_publish = now
+            self.bus.publish(Channel.SIGNALS, {"type": "portfolio_update", "source": self.name,
+                                               "data": self.portfolio.snapshot()}, self.name)
+        if self.store and (force or now - self._last_save >= PORTFOLIO_SAVE_S):
+            self._last_save = now
+            try:
+                await self.store.save_portfolio(self.portfolio.to_dict())
+            except Exception as e:
+                print(f"[Orchestrator] ⚠️ Could not save the books ({e})")
+
+    async def _load_portfolio(self):
+        try:
+            state = await self.store.load_portfolio()
+        except Exception as e:
+            print(f"[Orchestrator] ⚠️ Could not load the books ({e}); starting fresh")
+            state = None
+        if state:
+            self.portfolio = Portfolio.from_dict(state)
+        for ticker, volume in self.holdings.items():  # positions held before the books existed
+            if ticker not in self.portfolio.positions:
+                self.portfolio.positions[ticker] = {"volume": volume, "avg_price": None, "last_price": None}
+                print(f"[Orchestrator] {ticker} had no entry price on record; valuing it from the first price seen")
+        snap = self.portfolio.snapshot()
+        print(f"[Orchestrator] Books: equity {snap['equity']:,.2f}, peak {snap['peak']:,.2f}, "
+              f"drawdown {snap['drawdown_pct']:.1%}")
 
     def _notify(self, message: str, level: str = "info"):
         """Print and show in the dashboard's activity log."""
@@ -343,7 +419,8 @@ class Orchestrator(BaseAgent):
         client_order_id = uuid.uuid4().hex[:16]
         userref = secrets.randbelow(2**31 - 1) + 1  # Kraken userref is a positive int32
         order = {"ticker": ticker, "side": side, "volume": volume, "userref": userref, "sent_at": time.time(),
-                 "reason": reason, "stop": data.get("stop_loss") if side == "buy" else None}
+                 "reason": reason, "stop": data.get("stop_loss") if side == "buy" else None,
+                 "price": self._last_prices.get(ticker) or data.get("price")}
         self.pending[client_order_id] = order  # in memory first: blocks this ticker while saving
         if self.store:
             try:
