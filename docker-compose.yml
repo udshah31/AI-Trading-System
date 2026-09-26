@@ -20,6 +20,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    # append-only file: the bot's saved positions survive a crash (fsync every second)
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "127.0.0.1:6379:6379"  # localhost only: Redis has no password
     volumes:

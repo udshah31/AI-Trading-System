@@ -20,12 +20,37 @@ def kraken_balance_codes(ticker: str) -> set[str]:
     return {base, f"X{base}"}
 
 
+def holdings_key(dry_run: bool) -> str:
+    """Redis key for the bot's positions. Simulated and live positions never share a key:
+    a simulated position loaded in live mode could otherwise sell the user's real coins."""
+    return f"orchestrator:holdings:{'dry_run' if dry_run else 'live'}"
+
+
+class RedisHoldingsStore:
+    """The bot's own positions (ticker -> volume) in a Redis hash, so it can close them after a restart."""
+
+    def __init__(self, client, key: str):
+        self.client = client  # redis.asyncio client with decode_responses=True
+        self.key = key
+
+    async def load(self) -> dict[str, float]:
+        return {ticker: float(volume) for ticker, volume in (await self.client.hgetall(self.key)).items()}
+
+    async def save(self, ticker: str, volume: float) -> None:
+        await self.client.hset(self.key, ticker, str(volume))
+
+    async def remove(self, ticker: str) -> None:
+        await self.client.hdel(self.key, ticker)
+
+
 class Orchestrator(BaseAgent):
     """Spot-only order policy for risk-approved quant decisions.
 
     BUY opens a long only when flat; SELL only closes a long we hold (spot can't
     short); nothing is sent for a ticker while its previous order is in flight.
-    Holdings are the bot's own fills, tracked in memory.
+    Holdings are the bot's own fills. With a ``store`` they are loaded on start and
+    saved on every fill, so a restarted bot can still close its positions; a store
+    outage is logged and trading continues from memory.
 
     Live mode (``exchange`` set): before each order the Kraken spot balance is
     checked. BUY is skipped if the account already holds the coin (e.g. from before
@@ -34,10 +59,11 @@ class Orchestrator(BaseAgent):
     Dry-run passes no exchange: simulated positions don't exist on Kraken.
     """
 
-    def __init__(self, bus: MessageBus, config, exchange=None):
+    def __init__(self, bus: MessageBus, config, exchange=None, store=None):
         super().__init__("orchestrator", bus)
         self.config = config
         self.exchange = exchange  # live Kraken spot executor, or None in dry-run
+        self.store = store        # RedisHoldingsStore, or None to keep holdings in memory only
         self.holdings: dict[str, float] = {}  # ticker -> volume the bot bought and holds
         self.pending: dict[str, dict] = {}    # client_order_id -> {ticker, side, volume}
         self._checking: set[str] = set()      # tickers awaiting a balance check
@@ -48,6 +74,12 @@ class Orchestrator(BaseAgent):
         pass
 
     async def start(self):
+        if self.store:
+            try:
+                self.holdings = await self.store.load()
+                print(f"[Orchestrator] Restored bot positions: {self.holdings or 'none'}")
+            except Exception as e:
+                print(f"[Orchestrator] ⚠️ Could not load saved positions ({e}); starting with none")
         print("[Orchestrator] Started")
 
     async def _on_signal(self, payload: dict):
@@ -84,6 +116,7 @@ class Orchestrator(BaseAgent):
             self.holdings[order["ticker"]] = order["volume"]
         else:
             self.holdings.pop(order["ticker"], None)
+        await self._persist(order["ticker"])
 
     async def _route_approved(self, data: dict):
         ticker, action = data["ticker"], data.get("action")
@@ -117,6 +150,7 @@ class Orchestrator(BaseAgent):
                 held = min(held, on_exchange)
                 if held <= 0:
                     self.holdings.pop(ticker, None)
+                    await self._persist(ticker)
                     print(f"[Orchestrator] Skip SELL {ticker}: no balance left on Kraken; position dropped")
                     return
 
@@ -124,6 +158,18 @@ class Orchestrator(BaseAgent):
             self._send_order(ticker, "buy", data["shares"], data)
         else:
             self._send_order(ticker, "sell", held, data)
+
+    async def _persist(self, ticker: str) -> None:
+        if not self.store:
+            return
+        try:
+            if ticker in self.holdings:
+                await self.store.save(ticker, self.holdings[ticker])
+            else:
+                await self.store.remove(ticker)
+        except Exception as e:
+            print(f"[Orchestrator] ⚠️ Could not save position for {ticker} ({e}); "
+                  "it is tracked in memory only and won't survive a restart")
 
     async def _spot_balance(self, ticker: str) -> float:
         """Base-asset spot balance on Kraken (total, including amounts held by open orders)."""
