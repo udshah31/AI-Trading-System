@@ -73,7 +73,9 @@ services:
       context: .
       dockerfile: Dockerfile.dashboard
     ports:
-      - "8000:8000"  # the one public service: basic auth, fails closed without DASHBOARD_PASSWORD
+      # localhost by default (reach it over an SSH tunnel). Basic auth, fails closed without
+      # DASHBOARD_PASSWORD; set DASHBOARD_BIND=0.0.0.0 only behind TLS (see DEPLOY.md)
+      - "${DASHBOARD_BIND:-127.0.0.1}:8000:8000"
     environment:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading

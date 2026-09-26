@@ -1,20 +1,29 @@
-"""docker-compose exposure: only the authenticated dashboard listens beyond localhost,
-and Grafana has no default admin password."""
+"""docker-compose exposure: nothing is published beyond localhost by default (the
+dashboard can opt in with DASHBOARD_BIND), and Grafana has no default admin password."""
 from pathlib import Path
 
 import yaml
 
 COMPOSE = yaml.safe_load(Path("docker-compose.yml").read_text())
-PUBLIC_SERVICES = {"dashboard"}  # basic auth, fail-closed (hybrid/dashboard/app.py)
+# Only the dashboard (basic auth, fail-closed) may be opened up, and only by setting DASHBOARD_BIND
+LOCALHOST_DEFAULTS = {"127.0.0.1:", "${DASHBOARD_BIND:-127.0.0.1}:"}
 
 
-def test_only_dashboard_is_published_beyond_localhost():
+def test_nothing_published_beyond_localhost_by_default():
     exposed = []
     for name, service in COMPOSE["services"].items():
         for mapping in service.get("ports", []):
-            if name not in PUBLIC_SERVICES and not str(mapping).startswith("127.0.0.1:"):
+            if not any(str(mapping).startswith(prefix) for prefix in LOCALHOST_DEFAULTS):
                 exposed.append(f"{name}: {mapping}")
-    assert not exposed, f"bind to 127.0.0.1 or add auth: {exposed}"
+            elif name != "dashboard" and not str(mapping).startswith("127.0.0.1:"):
+                exposed.append(f"{name}: {mapping} (only the dashboard may be configurable)")
+    assert not exposed, f"bind to 127.0.0.1: {exposed}"
+
+
+def test_prometheus_scrapes_dashboard_over_compose_network():
+    prometheus = yaml.safe_load(Path("prometheus.yml").read_text())
+    [job] = [j for j in prometheus["scrape_configs"] if j["job_name"] == "dashboard"]
+    assert job["static_configs"][0]["targets"] == ["dashboard:8000"]
 
 
 def test_grafana_password_has_no_default():
