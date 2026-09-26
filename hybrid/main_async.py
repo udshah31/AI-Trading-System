@@ -17,7 +17,7 @@ from hybrid.data_agent import DataAgent
 from hybrid.quant_agent import QuantAgent
 from hybrid.risk_agent import RiskAgent
 from hybrid.execution_agent import ExecutionAgent
-from hybrid.orchestrator import Orchestrator
+from hybrid.orchestrator import Orchestrator, RedisHoldingsStore, holdings_key
 from hybrid.sniper_bot import SniperBot
 from hybrid.llm_agent import create_llm_agents
 from hybrid.storage import StorageService
@@ -99,7 +99,8 @@ class PaperTradingSystem:
         self.agents['execution'] = ExecutionAgent(self.bus, self.config, dry_run=dry_run)
         # live only: dry-run positions are simulated and don't exist on Kraken
         self.agents['orchestrator'] = Orchestrator(
-            self.bus, self.config, exchange=None if dry_run else self.kraken_spot)
+            self.bus, self.config, exchange=None if dry_run else self.kraken_spot,
+            store=RedisHoldingsStore(self.bus.client, holdings_key(dry_run)))
         
         # Storage agent (persists signals/trades/market data to PostgreSQL)
         if self.storage:
