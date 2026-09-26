@@ -675,11 +675,12 @@ class KrakenExecutor:
     # ============ ACCOUNT ============
     
     async def get_balances(self) -> Dict[str, Balance]:
-        """Get all account balances"""
+        """Get all account balances (rebuilt each call, so assets no longer held drop out)"""
+        balances: Dict[str, Balance] = {}
         if self.config.environment == KrakenEnvironment.FUTURES:
             result = await self.rest.get_futures_account()
             for asset, data in result.get("accounts", {}).items():
-                self._balances[asset] = Balance(
+                balances[asset] = Balance(
                     asset=asset,
                     free=Decimal(data.get("available", 0)),
                     used=Decimal(data.get("margin", 0)),
@@ -689,13 +690,14 @@ class KrakenExecutor:
             result = await self.rest.get_account_balance()
             for asset, total in result.items():
                 standard = self._to_standard_symbol(asset)
-                self._balances[standard] = Balance(
+                balances[standard] = Balance(
                     asset=standard,
                     free=total,  # Would need separate call for free/used
                     used=Decimal("0"),
                     total=total
                 )
-        return self._balances
+        self._balances = balances
+        return balances
     
     async def get_balance(self, asset: str) -> Optional[Balance]:
         balances = await self.get_balances()

@@ -97,7 +97,9 @@ class PaperTradingSystem:
         if self.storage:
             self.agents['risk'].set_storage(self.storage)
         self.agents['execution'] = ExecutionAgent(self.bus, self.config, dry_run=dry_run)
-        self.agents['orchestrator'] = Orchestrator(self.bus, self.config)
+        # live only: dry-run positions are simulated and don't exist on Kraken
+        self.agents['orchestrator'] = Orchestrator(
+            self.bus, self.config, exchange=None if dry_run else self.kraken_spot)
         
         # Storage agent (persists signals/trades/market data to PostgreSQL)
         if self.storage:
