@@ -8,8 +8,12 @@ Usage:
     # Quant-only mode (no LLM, no API costs — great for testing):
     python run.py --ticker AAPL --quant-only
 
-    # Full hybrid mode (requires ANTHROPIC_API_KEY):
+    # Full hybrid mode (needs the API key for the configured LLM provider;
+    # provider/models come from TRADINGAGENTS_* in .env unless overridden):
     python run.py --ticker AAPL
+
+    # Override the LLM for one run:
+    python run.py --ticker AAPL --llm-provider anthropic --llm-model <model-id>
 
     # Full hybrid with paper trading execution:
     python run.py --ticker AAPL --execute
@@ -30,7 +34,7 @@ from hybrid.config import HybridConfig
 from hybrid.pipeline import HybridPipeline
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Hybrid LLM + Quant Trading System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -77,25 +81,36 @@ Examples:
     )
     parser.add_argument(
         "--llm-provider",
-        default="anthropic",
-        help="LLM provider for TradingAgents (default: anthropic)",
+        help="LLM provider for TradingAgents (default: TRADINGAGENTS_LLM_PROVIDER from .env)",
     )
     parser.add_argument(
         "--llm-model",
-        default="claude-sonnet-4-20250514",
-        help="LLM model for TradingAgents",
+        help="Model for both deep and quick thinking (default: TRADINGAGENTS_*_THINK_LLM from .env)",
     )
+    return parser
 
+
+def tradingagents_overrides(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict:
+    """Only the LLM settings given on the command line; everything else comes from .env."""
+    if args.llm_provider and not args.llm_model:
+        # the .env models belong to the .env provider, so they can't be reused
+        parser.error("--llm-provider needs --llm-model (models are provider-specific)")
+    overrides = {}
+    if args.llm_provider:
+        overrides["llm_provider"] = args.llm_provider
+    if args.llm_model:
+        overrides["deep_think_llm"] = overrides["quick_think_llm"] = args.llm_model
+    return overrides
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     # ── Build Configuration ──
     config = HybridConfig(
         initial_capital=args.capital,
-        tradingagents_config={
-            "llm_provider": args.llm_provider,
-            "deep_think_llm": args.llm_model,
-            "quick_think_llm": args.llm_model,
-        },
+        tradingagents_config=tradingagents_overrides(args, parser),
     )
 
     # ── Initialize Pipeline ──
