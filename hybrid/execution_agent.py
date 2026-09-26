@@ -15,10 +15,11 @@ from typing import Any, Optional
 
 
 class ExecutionAgent(BaseAgent):
-    def __init__(self, bus: MessageBus, config: HybridConfig, dry_run: bool = True):
+    def __init__(self, bus: MessageBus, config: HybridConfig, dry_run: bool = True, broker=None):
         super().__init__("execution_agent", bus)
         self.config = config
         self.dry_run = dry_run
+        self.broker = broker  # hybrid.brokers.Broker; when set, every order goes through it
         self.kraken_spot: Optional[KrakenExecutor] = None
         self.kraken_futures: Optional[KrakenExecutor] = None
         self.alpaca: Optional[Any] = None  # AlpacaExecutor when not dry-run
@@ -28,6 +29,9 @@ class ExecutionAgent(BaseAgent):
         pass
     
     async def start(self):
+        if self.broker is not None:
+            print(f"[ExecutionAgent] Started ({self.broker.name})")
+            return
         import os
         
         # dry_run=True always wins; going live also requires LIVE_TRADING=true
@@ -61,6 +65,9 @@ class ExecutionAgent(BaseAgent):
         print("[ExecutionAgent] Started")
     
     async def stop(self):
+        if self.broker is not None:
+            await self.broker.close()
+            return
         if self.kraken_spot:
             await self.kraken_spot.close()
         if self.kraken_futures and self.kraken_futures != self.kraken_spot:
@@ -74,6 +81,19 @@ class ExecutionAgent(BaseAgent):
         symbol = data["symbol"]
         asset_type = data.get("asset_type", "auto")
         client_order_id = data.get("client_order_id")  # echoed back so callers can match fills
+
+        if self.broker is not None:
+            try:
+                report = await self.broker.submit_market(symbol, data["side"].lower(), float(data["volume"]),
+                                                         client_order_id, data.get("userref"))
+            except Exception as e:
+                await self._send_result(False, symbol, f"{self.broker.name}: {e}", exchange=self.broker.name,
+                                        client_order_id=client_order_id, status="rejected")
+                return
+            await self._send_result(report.filled, symbol, report.message, report.order_id, self.broker.name,
+                                    client_order_id=client_order_id, avg_price=report.avg_price,
+                                    filled_volume=report.filled_volume, status=report.status)
+            return
         
         exchange = self._route_exchange(symbol, asset_type)
         
@@ -170,7 +190,8 @@ class ExecutionAgent(BaseAgent):
         return r
     
     async def _send_result(self, success: bool, symbol: str, message: str, order_id: Optional[str] = None, exchange: str = "",
-                           client_order_id: Optional[str] = None, avg_price: Optional[float] = None):
+                           client_order_id: Optional[str] = None, avg_price: Optional[float] = None,
+                           filled_volume: Optional[float] = None, status: Optional[str] = None):
         self.bus.publish(Channel.ORDERS, {
             "type": "execution_result",
             "source": "execution_agent",
@@ -182,5 +203,7 @@ class ExecutionAgent(BaseAgent):
                 "exchange": exchange,
                 "client_order_id": client_order_id,
                 "avg_price": avg_price,
+                "filled_volume": filled_volume,
+                "status": status,  # filled | partial | open | rejected (broker path)
             }
         }, "execution_agent")

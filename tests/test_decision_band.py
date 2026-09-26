@@ -85,6 +85,7 @@ def test_trading_system_publishes_mode_and_schedule(monkeypatch):
             self.values[key] = value
 
     monkeypatch.delenv("LIVE_TRADING", raising=False)
+    monkeypatch.setenv("BROKER", "kraken")
     system = main_async.PaperTradingSystem()
     system.bus.client = Recorder()
     asyncio.run(system._publish_status())
@@ -94,3 +95,10 @@ def test_trading_system_publishes_mode_and_schedule(monkeypatch):
     monkeypatch.setenv("LIVE_TRADING", "true")
     asyncio.run(system._publish_status())
     assert system.bus.client.values["system:mode"] == "live"
+
+    monkeypatch.setenv("BROKER", "alpaca")
+    monkeypatch.delenv("LIVE_TRADING")
+    paper = main_async.PaperTradingSystem()
+    paper.bus.client = Recorder()
+    asyncio.run(paper._publish_status())
+    assert paper.bus.client.values["system:mode"] == "paper"

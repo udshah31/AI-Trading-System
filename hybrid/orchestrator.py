@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from hybrid.agent_base import BaseAgent
+from hybrid.brokers.kraken import KrakenBroker, kraken_balance_codes  # noqa: F401  (re-exported)
 from hybrid.messaging import MessageBus, Channel
 from hybrid.portfolio import Portfolio
 
@@ -19,20 +20,11 @@ PORTFOLIO_PUBLISH_S = 5.0  # price-driven portfolio updates to the risk agent/da
 PORTFOLIO_SAVE_S = 30.0    # price-driven saves of the books, at most this often (fills save at once)
 
 
-def kraken_balance_codes(ticker: str) -> set[str]:
-    """Kraken spot balance codes for a pair's base asset: BTC/USDT -> {XBT, XXBT}.
-
-    Older assets are X-prefixed (XXBT, XETH). Suffixed codes such as XBT.F or ETH.S
-    are earn/staking balances, not spot, so they never match.
-    """
-    base = ticker.upper().replace("-", "/").split("/")[0]
-    base = "XBT" if base == "BTC" else base
-    return {base, f"X{base}"}
-
-
-def holdings_key(dry_run: bool) -> str:
-    """Redis key for the bot's positions. Simulated and live positions never share a key:
-    a simulated position loaded in live mode could otherwise sell the user's real coins."""
+def holdings_key(dry_run: bool, broker: str = "kraken") -> str:
+    """Redis key for the bot's positions. Simulated, paper and live positions never share a
+    key: a simulated position loaded in live mode could otherwise sell the user's real coins."""
+    if broker == "alpaca":
+        return "orchestrator:holdings:alpaca_paper"
     return f"orchestrator:holdings:{'dry_run' if dry_run else 'live'}"
 
 
@@ -119,10 +111,12 @@ class Orchestrator(BaseAgent):
     dashboard, and each fill as ``trade_filled`` with its realised P&L.
     """
 
-    def __init__(self, bus: MessageBus, config, exchange=None, store=None, clock=time.monotonic):
+    def __init__(self, bus: MessageBus, config, exchange=None, store=None, clock=time.monotonic, broker=None):
         super().__init__("orchestrator", bus)
         self.config = config
-        self.exchange = exchange  # live Kraken spot executor, or None in dry-run
+        # Broker whose real account state is checked (balances, order lookups): Alpaca paper,
+        # live Kraken, or None for simulated dry-run. ``exchange`` (a KrakenExecutor) is the older form.
+        self.broker = broker or (KrakenBroker(exchange) if exchange is not None else None)
         self.store = store        # RedisHoldingsStore, or None to keep holdings in memory only
         self.holdings: dict[str, float] = {}  # ticker -> volume the bot bought and holds
         self.pending: dict[str, dict] = {}    # client_order_id -> {ticker, side, volume, userref}
@@ -164,12 +158,12 @@ class Orchestrator(BaseAgent):
             return
         for cid, order in leftover.items():
             ticker, side = order["ticker"], order["side"]
-            if not self.exchange:
+            if not self.broker:
                 print(f"[Orchestrator] Dropping simulated in-flight {side} {ticker}: no exchange to check")
                 await self._forget_pending(cid)
                 continue
             try:
-                found = await self.exchange.find_orders_by_userref(order["userref"])
+                found = await self.broker.find_orders(cid, order.get("userref"))
             except Exception as e:
                 self.pending[cid] = order  # outcome unknown: keep blocking this ticker
                 print(f"[Orchestrator] ⚠️ {side} {ticker} still unresolved, Kraken lookup failed ({e}); "
@@ -240,16 +234,25 @@ class Orchestrator(BaseAgent):
         if not order:
             return
         ticker = order["ticker"]
+        if data.get("status") == "open":
+            # the broker hasn't filled it yet: keep it pending (blocks the coin) until it resolves
+            self._notify(f"{order['side'].capitalize()} of {ticker} not filled yet; waiting before trading it again")
+            return
         if data["success"]:
-            await self._book_fill(order, data)
+            filled = float(data.get("filled_volume") or order["volume"])
+            await self._book_fill(order, data, filled)
             if order["side"] == "buy":
-                self.holdings[ticker] = order["volume"]
+                self.holdings[ticker] = self.holdings.get(ticker, 0.0) + filled
                 if _valid_stop(order.get("stop")):
                     self.stops[ticker] = float(order["stop"])
             else:
-                self.holdings.pop(ticker, None)
-                self.stops.pop(ticker, None)
-                self._stop_retry_at.pop(ticker, None)
+                remaining = self.holdings.get(ticker, 0.0) - filled
+                if remaining > 1e-12:  # partial sell: the rest stays, stop included
+                    self.holdings[ticker] = remaining
+                else:
+                    self.holdings.pop(ticker, None)
+                    self.stops.pop(ticker, None)
+                    self._stop_retry_at.pop(ticker, None)
             await self._persist(ticker)  # position first, so a crash here is re-settled on start
         elif order.get("reason") == "stop-loss":
             self._stop_retry_at[ticker] = self._clock() + STOP_RETRY_S
@@ -282,7 +285,7 @@ class Orchestrator(BaseAgent):
 
     async def _exit_on_stop(self, ticker: str, price: float, stop: float):
         held = self.holdings[ticker]
-        if self.exchange:
+        if self.broker:
             self._checking.add(ticker)
             try:
                 held = min(held, await self._spot_balance(ticker))
@@ -302,9 +305,9 @@ class Orchestrator(BaseAgent):
         self._notify(f"Stop-loss hit: {ticker} at {price:,.2f} (stop {stop:,.2f}). Selling {held}.", level="error")
         await self._send_order(ticker, "sell", held, {"price": price}, reason="stop-loss")
 
-    async def _book_fill(self, order: dict, data: dict):
+    async def _book_fill(self, order: dict, data: dict, volume: float):
         """Record a fill in the books at the best price known for it."""
-        ticker, side, volume = order["ticker"], order["side"], float(order["volume"])
+        ticker, side = order["ticker"], order["side"]
         # exchange-reported fill price, else the latest live tick, else the order's (possibly stale) price
         price = data.get("avg_price") or self._last_prices.get(ticker) or order.get("price")
         if not price:
@@ -368,7 +371,7 @@ class Orchestrator(BaseAgent):
         if action not in ("BUY", "SELL"):
             return
 
-        if self.exchange:
+        if self.broker:
             self._checking.add(ticker)
             try:
                 on_exchange = await self._spot_balance(ticker)
@@ -412,8 +415,8 @@ class Orchestrator(BaseAgent):
 
     async def _spot_balance(self, ticker: str) -> float:
         """Base-asset spot balance on Kraken (total, including amounts held by open orders)."""
-        balances = await self.exchange.get_balances()
-        return sum(float(balances[code].total) for code in kraken_balance_codes(ticker) if code in balances)
+        assert self.broker is not None
+        return await self.broker.position_volume(ticker)
 
     async def _send_order(self, ticker: str, side: str, volume: float, data: dict, reason: str = "decision"):
         client_order_id = uuid.uuid4().hex[:16]
@@ -426,7 +429,7 @@ class Orchestrator(BaseAgent):
             try:
                 await self.store.save_pending(client_order_id, order)
             except Exception as e:
-                if self.exchange:
+                if self.broker:
                     self.pending.pop(client_order_id, None)
                     print(f"[Orchestrator] Skip {side} {ticker}: could not record the order before "
                           f"sending ({e}); a crash could lose track of it")

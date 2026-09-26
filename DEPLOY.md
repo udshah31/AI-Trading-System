@@ -33,7 +33,7 @@ cp .env.template .env && nano .env                # DASHBOARD_PASSWORD, GRAFANA_
 docker compose up -d --build                      # first run by hand
 ```
 
-Keep `LIVE_TRADING=false` in `.env` until you've watched it run in dry-run.
+With the default `BROKER=alpaca`, orders go to your **Alpaca paper account**: set `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` to your paper keys and leave `LIVE_TRADING` unset. Check that Alpaca offers crypto in your state.
 
 ## 3. Connect CI (once)
 

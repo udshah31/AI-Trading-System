@@ -103,6 +103,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
       - LIVE_TRADING=${LIVE_TRADING:-false}
+      - BROKER=${BROKER:-alpaca}
       - ENABLE_SNIPER=${ENABLE_SNIPER:-false}
       - KRAKEN_API_KEY=${KRAKEN_API_KEY}
       - KRAKEN_API_SECRET=${KRAKEN_API_SECRET}
