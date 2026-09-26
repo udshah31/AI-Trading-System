@@ -1039,6 +1039,51 @@ async def decision_band():
     }
 
 
+# --- Learning loop: outcomes, re-fit proposals, approval ---
+def _proposal_json(p) -> dict:
+    return {"id": p.id, "status": p.status, "created_at": p.created_at.isoformat(),
+            "decided_at": p.decided_at.isoformat() if p.decided_at else None,
+            "current": p.current, "proposed": p.proposed, "metrics": p.metrics}
+
+
+@app.get("/api/learning")
+async def learning_state():
+    from hybrid.learning import MIN_SAMPLES, daily_samples
+    repo = _db().learning
+    proposals = await repo.list_proposals(20)
+    approved = next((p for p in proposals if p.status == "approved"), None)
+    active = await repo.active_weights()
+    return {
+        "active": {"weights": active, "source": "approved",
+                   "since": approved.decided_at.isoformat() if approved and approved.decided_at else None}
+        if active else {"weights": HybridConfig().tech_weights(), "source": "starting", "since": None},
+        "progress": {"labelled_days": len(daily_samples(await repo.labelled_samples())), "needed": MIN_SAMPLES},
+        "pending": next((_proposal_json(p) for p in proposals if p.status == "pending"), None),
+        "history": [_proposal_json(p) for p in proposals if p.status != "pending"][:10],
+    }
+
+
+async def _decide(proposal_id: str, status: str) -> dict:
+    repo = _db().learning
+    proposal = await repo.get_proposal(proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    if proposal.status != "pending":
+        raise HTTPException(status_code=409, detail=f"Proposal is already {proposal.status}")
+    await repo.set_status(proposal_id, status)
+    return {"id": proposal_id, "status": status}
+
+
+@app.post("/api/learning/proposals/{proposal_id}/approve")
+async def approve_proposal(proposal_id: str):
+    return await _decide(proposal_id, "approved")
+
+
+@app.post("/api/learning/proposals/{proposal_id}/reject")
+async def reject_proposal(proposal_id: str):
+    return await _decide(proposal_id, "rejected")
+
+
 # --- LLM Signals panel: recorded analyses, human labels, extractor accuracy ---
 SignalName = Literal["sentiment", "fundamental", "news", "research_debate", "trader_action", "portfolio_decision"]
 

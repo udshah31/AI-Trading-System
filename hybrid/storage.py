@@ -255,6 +255,33 @@ class SignalLabel(Base):
     __table_args__ = (UniqueConstraint("analysis_id", "signal", name="uq_signal_labels_analysis_signal"),)
 
 
+class DecisionOutcome(Base):
+    """What happened after a quant decision: the price move over the next horizon."""
+    __tablename__ = "decision_outcomes"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.id", ondelete="CASCADE"),
+                                           nullable=False, unique=True)
+    horizon_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    exit_price: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    forward_return: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    labeled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WeightProposal(Base):
+    """Technical weights the learning loop suggests; applied only once a person approves."""
+    __tablename__ = "weight_proposals"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, index=True)  # pending|approved|rejected|superseded
+    current: Mapped[dict] = mapped_column(JSON, nullable=False)   # relative weights when proposed
+    proposed: Mapped[dict] = mapped_column(JSON, nullable=False)
+    metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
 # =============================================================================
 # DATABASE MANAGER
 # =============================================================================
@@ -628,6 +655,94 @@ class LLMAnalysisRepository:
             ]
 
 
+def _utc(ts: datetime) -> datetime:
+    """SQLite returns naive datetimes; treat them as UTC like PostgreSQL's timestamptz."""
+    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+
+
+class LearningRepository:
+    TECH_FEATURES = {"rsi": "rsi_score", "ema": "ema_crossover_score",
+                     "bollinger": "bollinger_score", "volume": "volume_score"}
+    
+    def __init__(self, db: DatabaseManager):
+        self.db = db
+    
+    async def unlabeled_decisions(self, before: datetime) -> List[Signal]:
+        """Quant decisions made at or before ``before`` that have no outcome yet."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Signal)
+                .outerjoin(DecisionOutcome, DecisionOutcome.signal_id == Signal.id)
+                .where(Signal.agent == "quant_agent", Signal.timestamp <= before,
+                       DecisionOutcome.id.is_(None))
+                .order_by(Signal.timestamp.asc()))
+            return list(result.scalars().all())
+    
+    async def save_outcome(self, signal_id: str, horizon_hours: int, entry_price: float,
+                           exit_price: float) -> None:
+        async with self.db.session() as session:
+            session.add(DecisionOutcome(
+                signal_id=signal_id, horizon_hours=horizon_hours,
+                entry_price=Decimal(str(entry_price)), exit_price=Decimal(str(exit_price)),
+                forward_return=Decimal(str(round(exit_price / entry_price - 1, 8))),
+                labeled_at=datetime.now(timezone.utc)))
+    
+    async def labelled_samples(self) -> List[Dict]:
+        """Decisions with outcomes: symbol, timestamp, technical scores, forward_return."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(Signal, DecisionOutcome).join(DecisionOutcome, DecisionOutcome.signal_id == Signal.id)
+                .order_by(Signal.timestamp.asc()))
+            samples = []
+            for sig, outcome in result.all():
+                features = sig.features or {}
+                if not all(key in features for key in self.TECH_FEATURES.values()):
+                    continue
+                samples.append({
+                    "symbol": sig.symbol, "timestamp": _utc(sig.timestamp),
+                    "scores": {name: float(features[key]) for name, key in self.TECH_FEATURES.items()},
+                    "forward_return": float(outcome.forward_return),
+                })
+            return samples
+    
+    async def save_proposal(self, current: Dict, proposed: Dict, metrics: Dict) -> str:
+        """Store a pending proposal; an older pending one is superseded."""
+        async with self.db.session() as session:
+            pending = await session.execute(select(WeightProposal).where(WeightProposal.status == "pending"))
+            for old in pending.scalars():
+                old.status, old.decided_at = "superseded", datetime.now(timezone.utc)
+            proposal = WeightProposal(created_at=datetime.now(timezone.utc), status="pending",
+                                      current=dict(current), proposed=dict(proposed), metrics=dict(metrics))
+            session.add(proposal)
+            await session.flush()
+            return proposal.id
+    
+    async def list_proposals(self, limit: int = 20) -> List[WeightProposal]:
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(WeightProposal).order_by(WeightProposal.created_at.desc()).limit(limit))
+            return list(result.scalars().all())
+    
+    async def get_proposal(self, proposal_id: str) -> Optional[WeightProposal]:
+        async with self.db.session() as session:
+            return await session.get(WeightProposal, proposal_id)
+    
+    async def set_status(self, proposal_id: str, status: str) -> None:
+        async with self.db.session() as session:
+            proposal = await session.get(WeightProposal, proposal_id)
+            if proposal:
+                proposal.status, proposal.decided_at = status, datetime.now(timezone.utc)
+    
+    async def active_weights(self) -> Optional[Dict[str, float]]:
+        """The most recently approved technical weights, or None if none approved yet."""
+        async with self.db.session() as session:
+            result = await session.execute(
+                select(WeightProposal).where(WeightProposal.status == "approved")
+                .order_by(WeightProposal.decided_at.desc()).limit(1))
+            approved = result.scalars().first()
+            return dict(approved.proposed) if approved else None
+
+
 class StorageService:
     """Unified storage interface for all agents"""
     
@@ -640,6 +755,7 @@ class StorageService:
         self.orders = OrderRepository(self.db)  # Would need to create
         self.market_data = MarketDataRepository(self.db)
         self.llm = LLMAnalysisRepository(self.db)
+        self.learning = LearningRepository(self.db)
     
     async def initialize(self):
         await self.db.initialize()

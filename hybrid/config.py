@@ -113,16 +113,31 @@ class HybridConfig:
             return
 
         # ponytail: direct map, no generalized weight registry until >4 weights needed
-        map_ = {"tech_weight_rsi": "weight_rsi", "tech_weight_ema": "weight_ema_crossover",
-                "tech_weight_bollinger": "weight_bollinger", "tech_weight_volume": "weight_volume"}
-        learned_tech = {map_[k]: float(v) for k, v in learned.items() if k in map_}
-        if not learned_tech:
-            return
-        total = sum(learned_tech.values())
-        # learned file is relative weights summing to 1.0, scale to tech budget 0.25
-        scale = 0.25 / total if total > 0 else 0
-        candidate = {attr: val * scale for attr, val in learned_tech.items()}
-        # validate-before-mutate: mutate, validate, rollback on ValueError (let it propagate)
+        file_keys = {"tech_weight_rsi": "rsi", "tech_weight_ema": "ema",
+                     "tech_weight_bollinger": "bollinger", "tech_weight_volume": "volume"}
+        relative = {file_keys[k]: float(v) for k, v in learned.items() if k in file_keys}
+        if relative:
+            self.set_tech_weights(relative)
+
+    # Relative technical-indicator weights (summing to 1) <-> config attributes
+    _TECH_ATTRS = {"rsi": "weight_rsi", "ema": "weight_ema_crossover",
+                   "bollinger": "weight_bollinger", "volume": "weight_volume"}
+    TECH_BUDGET = 0.25  # share of the hybrid composite given to technical indicators
+
+    def tech_weights(self) -> dict:
+        """Technical weights relative to each other (sum to 1)."""
+        values = {name: getattr(self, attr) for name, attr in self._TECH_ATTRS.items()}
+        total = sum(values.values())
+        return {name: v / total for name, v in values.items()} if total else values
+
+    def set_tech_weights(self, relative: dict) -> None:
+        """Apply relative technical weights, scaled into the technical budget.
+
+        Validates before keeping the change; on ValueError the old weights stay.
+        """
+        total = sum(float(v) for v in relative.values())
+        scale = self.TECH_BUDGET / total if total > 0 else 0
+        candidate = {self._TECH_ATTRS[name]: float(v) * scale for name, v in relative.items()}
         original = {attr: getattr(self, attr) for attr in candidate}
         for attr, val in candidate.items():
             setattr(self, attr, val)

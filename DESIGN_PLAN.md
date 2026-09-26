@@ -41,6 +41,8 @@ Recent trades                            │ New-token watch
 Audit the LLM readings: runs │ readings with weight, score, source,
                              │ your label (blue pencil)  ✓ / ✗
 Accuracy by method  │  TypeSafe accuracy by confidence
+══════════════════════════════════════════════════════════════════
+Indicator weights: in use / proposed / change  │ evidence + Approve (two clicks)
 ▸ Activity log (collapsed)
 ```
 
