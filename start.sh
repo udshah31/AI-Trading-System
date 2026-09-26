@@ -75,12 +75,12 @@ done
 
 # Start application services
 echo -e "\n${GREEN}Starting trading agents...${NC}"
-docker-compose up -d dashboard data-agent quant-agent risk-agent execution-agent orchestrator llm-analyst
+docker-compose up -d dashboard trading-system
 
-# Optional: Start sniper bot
-if [ "$ENABLE_SNIPER" = "true" ]; then
-    echo -e "${GREEN}Starting sniper bot...${NC}"
-    docker-compose --profile sniper up -d sniper-bot
+if [ "$LIVE_TRADING" = "true" ]; then
+    echo -e "${RED}⚠️  LIVE_TRADING=true — real orders will be sent${NC}"
+else
+    echo -e "${YELLOW}Dry-run mode: orders are simulated (set LIVE_TRADING=true to go live)${NC}"
 fi
 
 echo -e "\n${GREEN}========================================${NC}"
@@ -93,7 +93,7 @@ echo "📉 Grafana:      http://localhost:3000 (admin/admin)"
 echo ""
 echo "View logs:"
 echo "  docker-compose logs -f                    # All services"
-echo "  docker-compose logs -f quant-agent        # Specific service"
+echo "  docker-compose logs -f trading-system     # Trading agents"
 echo ""
 echo "Stop system:"
 echo "  docker-compose down"

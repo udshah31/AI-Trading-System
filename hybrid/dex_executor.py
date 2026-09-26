@@ -12,7 +12,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Optional, Dict, List, Any
+from typing import TYPE_CHECKING, Optional, Dict, List, Any
 from enum import Enum
 
 import aiohttp
@@ -22,6 +22,9 @@ from solders.transaction import VersionedTransaction
 from solders.message import to_bytes_versioned
 import base58
 import base64
+
+if TYPE_CHECKING:
+    from hybrid.sniper_bot import TokenInfo
 
 # EVM imports (optional)
 try:

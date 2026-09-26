@@ -82,16 +82,30 @@ services:
       - ./hybrid:/app/hybrid
     command: uvicorn hybrid.dashboard.app:app --host 0.0.0.0 --port 8000
 
-  # Trading agents
-  data-agent:
+  # Trading system: hybrid/main_async.py runs every agent (data, quant, risk,
+  # execution, orchestrator, LLM, storage, BTC funding, optional sniper) in one
+  # process over the Redis bus. Orders are simulated unless LIVE_TRADING=true.
+  trading-system:
     build:
       context: .
       dockerfile: Dockerfile.agent
+    command: python -m hybrid.main_async
     environment:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
+      - LIVE_TRADING=${LIVE_TRADING:-false}
+      - ENABLE_SNIPER=${ENABLE_SNIPER:-false}
       - KRAKEN_API_KEY=${KRAKEN_API_KEY}
       - KRAKEN_API_SECRET=${KRAKEN_API_SECRET}
+      - KRAKEN_FUTURES_API_KEY=${KRAKEN_FUTURES_API_KEY}
+      - KRAKEN_FUTURES_API_SECRET=${KRAKEN_FUTURES_API_SECRET}
+      - KRAKEN_FUTURES_PASSPHRASE=${KRAKEN_FUTURES_PASSPHRASE}
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TRADINGAGENTS_LLM_PROVIDER=google
+      - TRADINGAGENTS_DEEP_THINK_LLM=gemini-2.5-flash
+      - TRADINGAGENTS_QUICK_THINK_LLM=gemini-2.5-flash
       - SOLANA_RPC_URL=${SOLANA_RPC_URL}
       - SOLANA_PRIVATE_KEY=${SOLANA_PRIVATE_KEY}
       - EVM_PRIVATE_KEY=${EVM_PRIVATE_KEY}
@@ -101,117 +115,12 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-
-  quant-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-
-  risk-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-
-  execution-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
-      - KRAKEN_API_KEY=${KRAKEN_API_KEY}
-      - KRAKEN_API_SECRET=${KRAKEN_API_SECRET}
-      - KRAKEN_FUTURES_API_KEY=${KRAKEN_FUTURES_API_KEY}
-      - KRAKEN_FUTURES_API_SECRET=${KRAKEN_FUTURES_API_SECRET}
-      - ALPACA_API_KEY=${ALPACA_API_KEY}
-      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-
-  orchestrator:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-
-  llm-analyst:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - TRADINGAGENTS_LLM_PROVIDER=google
-      - TRADINGAGENTS_DEEP_THINK_LLM=gemini-2.5-flash
-      - TRADINGAGENTS_QUICK_THINK_LLM=gemini-2.5-flash
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+    restart: unless-stopped
     deploy:
       resources:
         limits:
           cpus: '2'
           memory: 2G
-
-  sniper-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
-      - SOLANA_RPC_URL=${SOLANA_RPC_URL}
-      - SOLANA_PRIVATE_KEY=${SOLANA_PRIVATE_KEY}
-      - EVM_PRIVATE_KEY=${EVM_PRIVATE_KEY}
-      - BASE_RPC_URL=${BASE_RPC_URL}
-      - ENABLE_SNIPER=true
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    profiles:
-      - sniper
 
 volumes:
   postgres_data:

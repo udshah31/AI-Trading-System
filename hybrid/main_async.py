@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from hybrid.messaging import MessageBus
-from hybrid.config import HybridConfig
+from hybrid.messaging import Channel, MessageBus
+from hybrid.config import HybridConfig, live_trading_enabled
 from hybrid.data_agent import DataAgent
 from hybrid.quant_agent import QuantAgent
 from hybrid.risk_agent import RiskAgent
@@ -23,7 +23,11 @@ from hybrid.llm_agent import create_llm_agents
 from hybrid.storage import StorageService
 from hybrid.storage_agent import StorageAgent
 from hybrid.strategies.btc_funding import create_btc_funding_strategy
-from hybrid.kraken_executor import KrakenExecutor, KrakenConfig, KrakenEnvironment
+from hybrid.kraken_executor import (
+    KrakenConfig,
+    KrakenEnvironment,
+    KrakenExecutor,
+)
 
 import os
 
@@ -31,12 +35,13 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://trader:secret@localhost:5432/trading"
 )
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 
 class PaperTradingSystem:
     def __init__(self):
         self.config = HybridConfig()
-        self.bus = MessageBus("redis://localhost:6379")
+        self.bus = MessageBus(REDIS_URL)
         self.agents = {}
         self.background_tasks = []
         self.kraken_spot = None
@@ -62,11 +67,14 @@ class PaperTradingSystem:
         await self.bus.start()
         print("[Bus] Redis pub/sub listener started")
         
-        # Initialize Kraken clients
+        # Initialize Kraken clients (dry-run unless LIVE_TRADING=true)
+        dry_run = not live_trading_enabled()
+        print(f"[System] Kraken order mode: {'DRY-RUN (simulated)' if dry_run else 'LIVE — REAL ORDERS'}")
         self.kraken_spot = KrakenExecutor(KrakenConfig(
             api_key=os.getenv("KRAKEN_API_KEY"),
             api_secret=os.getenv("KRAKEN_API_SECRET"),
-            environment=KrakenEnvironment.SPOT
+            environment=KrakenEnvironment.SPOT,
+            dry_run=dry_run,
         ))
         await self.kraken_spot.initialize()
         
@@ -75,18 +83,20 @@ class PaperTradingSystem:
                 api_key=os.getenv("KRAKEN_FUTURES_API_KEY"),
                 api_secret=os.getenv("KRAKEN_FUTURES_API_SECRET"),
                 passphrase=os.getenv("KRAKEN_FUTURES_PASSPHRASE", ""),
-                environment=KrakenEnvironment.FUTURES
+                environment=KrakenEnvironment.FUTURES,
+                dry_run=dry_run,
             ))
             await self.kraken_futures.initialize()
         else:
-            print("[System] Futures API not configured, using spot for both (paper mode)")
-            self.kraken_futures = self.kraken_spot
+            print("[System] Futures API not configured — BTC funding strategy disabled")
         
         # Core agents
         self.agents['data'] = DataAgent(self.bus, symbols=["BTC/USDT", "ETH/USDT", "SOL/USDT"], exchange_id="kraken")
         self.agents['quant'] = QuantAgent(self.bus, self.config)
         self.agents['risk'] = RiskAgent(self.bus, self.config)
-        self.agents['execution'] = ExecutionAgent(self.bus, self.config, dry_run=True)
+        if self.storage:
+            self.agents['risk'].set_storage(self.storage)
+        self.agents['execution'] = ExecutionAgent(self.bus, self.config, dry_run=dry_run)
         self.agents['orchestrator'] = Orchestrator(self.bus, self.config)
         
         # Storage agent (persists signals/trades/market data to PostgreSQL)
@@ -97,13 +107,14 @@ class PaperTradingSystem:
         llm_agents = create_llm_agents(self.bus, self.config)
         self.agents.update(llm_agents)
         
-        # BTC Funding Strategy
-        self.agents['btc_funding'] = await create_btc_funding_strategy(
-            self.bus, self.config, self.kraken_spot, self.kraken_futures,
-            min_funding_bps=1.0,
-            max_position_usd=5000.0,
-            stop_loss_basis_bps=200.0
-        )
+        # BTC Funding Strategy (needs a real futures client for the perp hedge)
+        if self.kraken_futures:
+            self.agents['btc_funding'] = await create_btc_funding_strategy(
+                self.bus, self.config, self.kraken_spot, self.kraken_futures,
+                min_funding_bps=1.0,
+                max_position_usd=5000.0,
+                stop_loss_basis_bps=200.0
+            )
         
         # Sniper bot (optional)
         if os.getenv("ENABLE_SNIPER", "false").lower() == "true":
@@ -125,7 +136,7 @@ class PaperTradingSystem:
         
         print("\n✅ All agents started")
         print("📊 Dashboard: http://localhost:8000")
-        print("📈 BTC Funding Strategy: ACTIVE")
+        print(f"📈 BTC Funding Strategy: {'ACTIVE' if 'btc_funding' in self.agents else 'DISABLED'}")
         print("\nPress Ctrl+C to stop\n")
     
     async def run(self):
@@ -182,7 +193,7 @@ class PaperTradingSystem:
                     if equity_data:
                         labels = [p.timestamp.isoformat() for p in equity_data]
                         data = [float(p.equity) for p in equity_data]
-                        await self.bus.publish("signals", {
+                        self.bus.publish(Channel.SIGNALS, {
                             "type": "equity_history",
                             "data": {"labels": labels, "data": data}
                         }, "orchestrator")

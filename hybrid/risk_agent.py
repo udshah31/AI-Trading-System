@@ -94,7 +94,7 @@ class RiskAgent(BaseAgent):
                 max_daily_loss = self.config.max_drawdown_pct * total_equity
                 risk_budget_remaining = max(0, max_daily_loss + daily_pnl)
                 
-                await self.bus.publish("signals", {
+                self.bus.publish(Channel.SIGNALS, {
                     "type": "risk_update",
                     "data": {
                         "drawdown_pct": round(max_drawdown, 2),
@@ -108,7 +108,6 @@ class RiskAgent(BaseAgent):
                         "risk_budget_remaining": round(risk_budget_remaining, 2),
                         "circuit_breaker": max_drawdown >= self.config.max_drawdown_pct * 100,
                         "total_equity": round(total_equity, 2),
-                        "daily_pnl": round(daily_pnl, 2)
                     }
                 }, "risk_agent")
         except Exception as e:

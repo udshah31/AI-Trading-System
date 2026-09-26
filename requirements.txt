@@ -1,6 +1,6 @@
 # Core dependencies
 python-dotenv>=1.0.0
-redis>=5.0.0
+redis>=5.0.1
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 
@@ -20,6 +20,7 @@ aiohttp>=3.9.0
 
 # Solana
 solders>=0.18.0
+base58>=2.1.0
 anchorpy>=0.19.0
 
 # EVM
@@ -31,7 +32,7 @@ prometheus-client>=0.19.0
 prometheus-fastapi-instrumentator>=1.0.0
 
 # Database
-sqlalchemy>=2.0.0
+sqlalchemy[asyncio]>=2.0.0
 asyncpg>=0.29.0
 alembic>=1.12.0
 

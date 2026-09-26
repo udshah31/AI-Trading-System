@@ -281,14 +281,14 @@ class BTCFundingStrategy:
             if self.position.state == PositionState.OPEN:
                 position_usd = self.position.spot_volume * funding_data["spot_price"]
             
-            await self.bus.publish("signals", {
+            self.bus.publish(Channel.SIGNALS, {
                 "type": "strategy_update",
                 "data": {
                     "id": "btc_funding",
                     "status": "active" if self.position.state == PositionState.OPEN else "standby",
-                    "funding_rate_bps": round(funding_rate_bps, 1),
-                    "basis_bps": round(basis_bps, 1),
-                    "apr_pct": round(funding_apr, 1),
+                    "funding_rate_bps": round(float(funding_rate_bps), 1),
+                    "basis_bps": round(float(basis_bps), 1),
+                    "apr_pct": round(float(funding_apr), 1),
                     "position_usd": float(position_usd),
                     "max_position_usd": float(self.max_position_usd),
                     "last_update": datetime.utcnow().isoformat() + "Z"
@@ -312,6 +312,7 @@ class BTCFundingStrategy:
 
 
 async def create_btc_funding_strategy(bus, config, kraken_spot, kraken_futures, **kwargs):
-    strategy = BTCFundingStrategy(bus, config, kraken_spot, kraken_futures)
-    await strategy.start()
-    return strategy
+    # Not started here: the caller owns start(), so the monitor loop runs exactly once.
+    if kraken_futures is None or kraken_futures is kraken_spot:
+        raise ValueError("BTC funding needs a separate Kraken Futures client for the perp hedge")
+    return BTCFundingStrategy(bus, config, kraken_spot, kraken_futures, **kwargs)

@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -20,6 +21,8 @@ from urllib.parse import urlencode
 
 import aiohttp
 import websockets
+
+from hybrid.config import live_trading_enabled
 
 
 class KrakenEnvironment(Enum):
@@ -35,6 +38,8 @@ class KrakenConfig:
     api_secret: str              # Base64 encoded
     passphrase: str = ""         # Optional, for futures
     environment: KrakenEnvironment = KrakenEnvironment.SPOT
+    # Kraken has no spot sandbox: when True, orders are simulated and never sent.
+    dry_run: bool = field(default_factory=lambda: not live_trading_enabled())
     
     # Rate limits
     rest_rate_limit: int = 15    # requests/second
@@ -568,7 +573,8 @@ class KrakenExecutor:
         major_pairs = ["XBT/USD", "ETH/USD", "SOL/USD", "XBT/USDT"]
         self.ws.subscribe_ticker(major_pairs, self._on_ticker_update)
         
-        print(f"[Kraken] Initialized ({self.config.environment.value})")
+        mode = "DRY-RUN" if self.config.dry_run else "LIVE ORDERS"
+        print(f"[Kraken] Initialized ({self.config.environment.value}, {mode})")
     
     async def close(self):
         if self._closed:
@@ -699,6 +705,8 @@ class KrakenExecutor:
     
     async def place_order(self, order: OrderRequest) -> OrderResult:
         """Place an order"""
+        if self.config.dry_run:
+            return self._simulate_fill(order)
         if self.config.environment == KrakenEnvironment.FUTURES:
             result = await self.rest.add_futures_order(order)
         else:
@@ -709,8 +717,33 @@ class KrakenExecutor:
         
         return result
     
+    def _simulate_fill(self, order: OrderRequest) -> OrderResult:
+        """Dry-run fill: no network call, fills in full at the limit or last cached price."""
+        ticker = self._tickers.get(self._to_standard_symbol(order.symbol))
+        fill_price = order.price or (ticker.last if ticker else None)
+        print(f"[Kraken DRY-RUN] {order.side} {order.volume} {order.symbol} "
+              f"({order.order_type}) @ {fill_price or 'market'} — not sent")
+        return OrderResult(
+            success=True,
+            order_id=f"DRYRUN-{uuid.uuid4().hex[:12]}",
+            client_order_id=order.client_order_id,
+            symbol=order.symbol,
+            side=order.side,
+            order_type=order.order_type,
+            volume=order.volume,
+            price=order.price,
+            filled_volume=order.volume,
+            avg_fill_price=fill_price,
+            status="closed",
+            timestamp=time.time(),
+            raw_response={"dry_run": True},
+        )
+    
     async def cancel_order(self, order_id: str) -> OrderResult:
         """Cancel an order"""
+        if self.config.dry_run:
+            return OrderResult(success=True, order_id=order_id, status="canceled",
+                               raw_response={"dry_run": True})
         result = await self.rest.cancel_order(
             order_id, 
             futures=self.config.environment == KrakenEnvironment.FUTURES
@@ -722,6 +755,8 @@ class KrakenExecutor:
         return result
     
     async def cancel_all_orders(self) -> Dict:
+        if self.config.dry_run:
+            return {"count": 0, "dry_run": True}
         return await self.rest.cancel_all_orders(
             futures=self.config.environment == KrakenEnvironment.FUTURES
         )
@@ -882,7 +917,6 @@ class KrakenExecutionAgent:
 
 
 # Add missing imports
-import os
 from hybrid.messaging import Channel
 
 # =============================================================================
