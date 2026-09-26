@@ -6,20 +6,41 @@ import uuid
 from hybrid.agent_base import BaseAgent
 from hybrid.messaging import MessageBus, Channel
 
+MIN_POSITION_USD = 10.0  # a smaller balance is dust, not a position
+
+
+def kraken_balance_codes(ticker: str) -> set[str]:
+    """Kraken spot balance codes for a pair's base asset: BTC/USDT -> {XBT, XXBT}.
+
+    Older assets are X-prefixed (XXBT, XETH). Suffixed codes such as XBT.F or ETH.S
+    are earn/staking balances, not spot, so they never match.
+    """
+    base = ticker.upper().replace("-", "/").split("/")[0]
+    base = "XBT" if base == "BTC" else base
+    return {base, f"X{base}"}
+
 
 class Orchestrator(BaseAgent):
     """Spot-only order policy for risk-approved quant decisions.
 
     BUY opens a long only when flat; SELL only closes a long we hold (spot can't
     short); nothing is sent for a ticker while its previous order is in flight.
-    Holdings are tracked from execution results in memory, so they reset on restart.
+    Holdings are the bot's own fills, tracked in memory.
+
+    Live mode (``exchange`` set): before each order the Kraken spot balance is
+    checked. BUY is skipped if the account already holds the coin (e.g. from before
+    a restart, or the user's own); SELL is capped at the actual balance and never
+    touches coins the bot didn't buy; if the check fails, nothing is sent.
+    Dry-run passes no exchange: simulated positions don't exist on Kraken.
     """
 
-    def __init__(self, bus: MessageBus, config):
+    def __init__(self, bus: MessageBus, config, exchange=None):
         super().__init__("orchestrator", bus)
         self.config = config
-        self.holdings: dict[str, float] = {}  # ticker -> volume held long
+        self.exchange = exchange  # live Kraken spot executor, or None in dry-run
+        self.holdings: dict[str, float] = {}  # ticker -> volume the bot bought and holds
         self.pending: dict[str, dict] = {}    # client_order_id -> {ticker, side, volume}
+        self._checking: set[str] = set()      # tickers awaiting a balance check
         self.bus.subscribe(Channel.SIGNALS, self._on_signal)
         self.bus.subscribe(Channel.ORDERS, self._on_order)
 
@@ -40,7 +61,7 @@ class Orchestrator(BaseAgent):
             status = "✅ APPROVED" if data['approved'] else f"🚫 BLOCKED: {data['rejection_reason']}"
             print(f"[Orchestrator] Risk: {status} for {data['ticker']}")
             if data['approved']:
-                self._route_approved(data)
+                await self._route_approved(data)
 
         elif msg_type == "llm_analysis_result":
             if payload['data']['success']:
@@ -64,19 +85,50 @@ class Orchestrator(BaseAgent):
         else:
             self.holdings.pop(order["ticker"], None)
 
-    def _route_approved(self, data: dict):
+    async def _route_approved(self, data: dict):
         ticker, action = data["ticker"], data.get("action")
-        if any(o["ticker"] == ticker for o in self.pending.values()):
+        if ticker in self._checking or any(o["ticker"] == ticker for o in self.pending.values()):
             print(f"[Orchestrator] Skip {action} {ticker}: previous order still in flight")
             return
         held = self.holdings.get(ticker, 0.0)
-        if action == "BUY" and not held:
+        if action == "BUY" and held:
+            print(f"[Orchestrator] Skip BUY {ticker}: already long")
+            return
+        if action == "SELL" and not held:
+            print(f"[Orchestrator] Skip SELL {ticker}: no long position to close (spot, no shorting)")
+            return
+        if action not in ("BUY", "SELL"):
+            return
+
+        if self.exchange:
+            self._checking.add(ticker)
+            try:
+                on_exchange = await self._spot_balance(ticker)
+            except Exception as e:
+                print(f"[Orchestrator] Skip {action} {ticker}: balance check failed, not trading ({e})")
+                return
+            finally:
+                self._checking.discard(ticker)
+            if action == "BUY" and on_exchange * float(data.get("price") or 0) >= MIN_POSITION_USD:
+                print(f"[Orchestrator] Skip BUY {ticker}: account already holds {on_exchange} "
+                      "(from before a restart, or not the bot's)")
+                return
+            if action == "SELL":
+                held = min(held, on_exchange)
+                if held <= 0:
+                    self.holdings.pop(ticker, None)
+                    print(f"[Orchestrator] Skip SELL {ticker}: no balance left on Kraken; position dropped")
+                    return
+
+        if action == "BUY":
             self._send_order(ticker, "buy", data["shares"], data)
-        elif action == "SELL" and held:
-            self._send_order(ticker, "sell", held, data)
         else:
-            reason = "already long" if action == "BUY" else "no long position to close (spot, no shorting)"
-            print(f"[Orchestrator] Skip {action} {ticker}: {reason}")
+            self._send_order(ticker, "sell", held, data)
+
+    async def _spot_balance(self, ticker: str) -> float:
+        """Base-asset spot balance on Kraken (total, including amounts held by open orders)."""
+        balances = await self.exchange.get_balances()
+        return sum(float(balances[code].total) for code in kraken_balance_codes(ticker) if code in balances)
 
     def _send_order(self, ticker: str, side: str, volume: float, data: dict):
         client_order_id = uuid.uuid4().hex[:16]
