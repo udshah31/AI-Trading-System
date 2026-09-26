@@ -16,6 +16,24 @@ from hybrid.kraken_executor import KrakenExecutor, KrakenConfig, KrakenEnvironme
 from hybrid.messaging import MessageBus, Channel
 from hybrid.config import HybridConfig
 
+PERP_SYMBOL = "PI_XBTUSD"
+
+# Kraken Futures settles funding hourly, and for inverse contracts like PI_XBTUSD the
+# ticker's fundingRate is absolute (BTC per $1 contract per hour). The strategy works in
+# the relative rate per 8h period, the convention its thresholds and the dashboard use.
+FUNDING_PERIOD_HOURS = 8
+FUNDING_PERIODS_PER_YEAR = 365 * 24 // FUNDING_PERIOD_HOURS
+
+
+def relative_funding_rate_8h(absolute_hourly_rate: Decimal, mark_price: Decimal) -> Decimal:
+    """Kraken's absolute hourly rate -> fraction of notional paid per 8h."""
+    return absolute_hourly_rate * mark_price * FUNDING_PERIOD_HOURS
+
+
+def funding_apr_pct(rate_8h: Decimal) -> Decimal:
+    """Relative 8h funding rate -> simple annualised rate, in percent."""
+    return rate_8h * FUNDING_PERIODS_PER_YEAR * 100
+
 
 class PositionState(Enum):
     FLAT = "flat"
@@ -117,13 +135,13 @@ class BTCFundingStrategy:
             return
         
         funding_rate_bps = funding_data["funding_rate"] * 10000
-        funding_apr = funding_data["funding_rate"] * 365 * 3
+        funding_apr = funding_apr_pct(funding_data["funding_rate"])
         basis_bps = funding_data["basis_bps"]
         
         if (funding_rate_bps >= self.min_funding_bps and
             funding_apr >= self.min_funding_apr and
             abs(basis_bps) <= self.max_basis_bps):
-            print(f"[BTCFunding] Entry: funding={funding_rate_bps:.1f}bps, APR={funding_apr:.1f}%, basis={basis_bps:.1f}bps")
+            print(f"[BTCFunding] Entry: funding={funding_rate_bps:.2f}bps/8h, APR={funding_apr:.1f}%, basis={basis_bps:.1f}bps")
             await self._enter_position(funding_data)
     
     async def _get_funding_data(self) -> Optional[Dict]:
@@ -133,14 +151,15 @@ class BTCFundingStrategy:
                 return None
             spot_price = spot_ticker.last
             
-            perp_ticker = await self.kraken_futures.get_ticker("PI_XBTUSD")
-            if not perp_ticker:
+            perp = await self._get_perp_ticker()
+            if not perp:
                 return None
-            perp_price = perp_ticker.last
+            # mark price, not last: PI_XBTUSD trades thinly and its last print can be hours old
+            perp_price = Decimal(str(perp["markPrice"]))
             
             basis = (perp_price - spot_price) / spot_price
             basis_bps = basis * 10000
-            funding_rate = await self._get_funding_rate()
+            funding_rate = relative_funding_rate_8h(Decimal(str(perp.get("fundingRate") or 0)), perp_price)
             
             return {
                 "spot_price": spot_price,
@@ -153,16 +172,17 @@ class BTCFundingStrategy:
             print(f"[BTCFunding] Error getting funding data: {e}")
             return None
     
-    async def _get_funding_rate(self) -> Decimal:
+    async def _get_perp_ticker(self) -> Optional[Dict]:
+        """PI_XBTUSD from Kraken Futures tickers: last, markPrice and fundingRate in one call.
+
+        KrakenExecutor.get_ticker only speaks the spot Ticker API, so it can't be used here.
+        """
         # ponytail: futures REST only, WS funding stream if we need sub-second
-        try:
-            data = await self.kraken_futures.rest.get_futures_tickers()
-            for t in data.get("tickers", []):
-                if t.get("symbol") == "PI_XBTUSD":
-                    return Decimal(str(t.get("fundingRate", 0) or 0))
-            return Decimal(str(data.get("fundingRate", 0) or 0))
-        except Exception:
-            return Decimal("0")
+        data = await self.kraken_futures.rest.get_futures_tickers()
+        for t in data.get("tickers", []):
+            if t.get("symbol") == PERP_SYMBOL:
+                return t
+        return None
     
     async def _enter_position(self, funding_data: Dict):
         self.position.state = PositionState.ENTERING
@@ -213,7 +233,7 @@ class BTCFundingStrategy:
         
         if self.position.entry_time:
             hours_held = (datetime.utcnow() - self.position.entry_time).total_seconds() / 3600
-            periods = hours_held / 8
+            periods = hours_held / FUNDING_PERIOD_HOURS
             funding_collected = self.position.spot_volume * self.position.entry_funding_rate * self.position.entry_spot_price * Decimal(str(periods))
             self.position.total_funding_collected = funding_collected
         
@@ -274,7 +294,7 @@ class BTCFundingStrategy:
                 return
             
             funding_rate_bps = funding_data["funding_rate"] * 10000
-            funding_apr = funding_data["funding_rate"] * 365 * 3
+            funding_apr = funding_apr_pct(funding_data["funding_rate"])
             basis_bps = funding_data["basis_bps"]
             
             position_usd = Decimal("0")
