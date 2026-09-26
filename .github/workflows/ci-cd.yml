@@ -6,11 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  REGISTRY: ${{ secrets.OCI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}
-  IMAGE_NAME: ai-trading-system
-  OCI_CLI_VERSION: 4.5.0
-
 jobs:
   # ──────────────────────────────────────────────
   # TEST & LINT
@@ -55,111 +50,66 @@ jobs:
           mypy hybrid/ --ignore-missing-imports
 
   # ──────────────────────────────────────────────
-  # BUILD & PUSH DOCKER IMAGE
+  # DEPLOY TO ORACLE CLOUD (Always Free Ampere VM)
   # ──────────────────────────────────────────────
-  build:
-    name: Build & Push Docker Image
+  # One VM runs the docker compose stack; this job SSHes in and runs
+  # scripts/deploy.sh for the exact commit that passed tests. The stack is
+  # updated in place (one bot, never duplicates). Secrets live in the VM's .env.
+  # Approval: the `production` environment should require a reviewer
+  # (Settings → Environments). Setup: DEPLOY.md.
+  deploy:
+    name: Deploy to Oracle Cloud VM
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false  # never interrupt a deploy halfway
     permissions:
       contents: read
-      packages: write
-      id-token: write
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Install OCI CLI
+      - name: Check deploy is configured
+        id: cfg
         run: |
-          curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh | bash -s -- --accept-all-defaults
-          echo "$HOME/bin" >> $GITHUB_PATH
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ]; then
+            echo "::notice::Deploy skipped: DEPLOY_HOST / DEPLOY_USER secrets not set (see DEPLOY.md)"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Login to OCI Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.OCI_USERNAME }}
-          password: ${{ secrets.OCI_AUTH_TOKEN }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          # the deployed container serves the dashboard (health check hits :8000/health)
-          file: Dockerfile.dashboard
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ──────────────────────────────────────────────
-  # DEPLOY TO ORACLE CLOUD (OCI)
-  # ──────────────────────────────────────────────
-  deploy:
-    name: Deploy to Oracle Cloud
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
       - name: Checkout code
+        if: steps.cfg.outputs.configured == 'true'
         uses: actions/checkout@v4
 
-      - name: Install OCI CLI
+      - name: Configure SSH
+        if: steps.cfg.outputs.configured == 'true'
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh | bash -s -- --accept-all-defaults
-          echo "$HOME/bin" >> $GITHUB_PATH
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # pinned host key: refuse to deploy to anything else
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
-      - name: Configure OCI CLI
+      - name: Deploy commit
+        if: steps.cfg.outputs.configured == 'true'
         run: |
-          mkdir -p ~/.oci
-          cat > ~/.oci/config << EOF
-          [DEFAULT]
-          user=${{ secrets.OCI_USER_OCID }}
-          fingerprint=${{ secrets.OCI_FINGERPRINT }}
-          tenancy=${{ secrets.OCI_TENANCY_OCID }}
-          region=${{ secrets.OCI_REGION }}
-          key_file=~/.oci/private_key.pem
-          EOF
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/private_key.pem
-          chmod 600 ~/.oci/private_key.pem
-
-      - name: Deploy to OCI Container Instances
-        run: |
-          # Create or update container instance
-          oci container-instances container-instance create \
-            --compartment-id ${{ secrets.OCI_COMPARTMENT_OCID }} \
-            --display-name ai-trading-system \
-            --shape-name VM.Standard.E3.Flex \
-            --shape-config '{"ocpus": 2, "memoryInGBs": 16}' \
-            --containers '[{"name": "ai-trading-system", "imageUrl": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest", "portMappings": [{"containerPort": 8000}], "environmentVariables": {"PYTHONPATH": "/app", "DASHBOARD_USER": "admin", "DASHBOARD_PASSWORD": "${{ secrets.DASHBOARD_PASSWORD }}", "DATABASE_URL": "${{ secrets.DATABASE_URL }}", "REDIS_URL": "${{ secrets.REDIS_URL }}", "KRAKEN_API_KEY": "${{ secrets.KRAKEN_API_KEY }}", "KRAKEN_API_SECRET": "${{ secrets.KRAKEN_API_SECRET }}", "GOOGLE_API_KEY": "${{ secrets.GOOGLE_API_KEY }}", "SENTRY_ACCESS_TOKEN": "${{ secrets.SENTRY_ACCESS_TOKEN }}", "EXA_API_KEY": "${{ secrets.EXA_API_KEY }}", "BROWSER_USE_API_KEY": "${{ secrets.BROWSER_USE_API_KEY }}", "ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}", "OPENAI_API_KEY": "${{ secrets.OPENAI_API_KEY }}", "OPENROUTER_API_KEY": "${{ secrets.OPENROUTER_API_KEY }}", "EMBEDDED_AGENT_PROVIDER": "openai", "SENTRY_ACCESS_TOKEN": "${{ secrets.SENTRY_ACCESS_TOKEN }}"}]' \
-            --vnics '[{"subnetId": "${{ secrets.OCI_SUBNET_OCID }}", "assignPublicIp": true}]' \
-            --wait-for-state RUNNING
-
-      - name: Verify deployment
-        run: |
-          # Wait for health check
-          sleep 30
-          INSTANCE_IP=$(oci container-instances container-instance list --compartment-id ${{ secrets.OCI_COMPARTMENT_OCID }} --display-name ai-trading-system --query "data[0].containers[0].ipAddresses[0].ipAddress" --raw-output)
-          curl -f "http://${INSTANCE_IP}:8000/health" || exit 1
-          echo "Deployment successful! Service running at http://${INSTANCE_IP}:8000"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
+            "$DEPLOY_USER@$DEPLOY_HOST" "bash -s -- $GITHUB_SHA" < scripts/deploy.sh
 
   # ──────────────────────────────────────────────
   # NOTIFY ON FAILURE
   # ──────────────────────────────────────────────
   notify:
     name: Notify on Failure
-    needs: [test, build, deploy]
+    needs: [test, deploy]
     if: failure()
     runs-on: ubuntu-latest
     env:
