@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"  # localhost only: no network auth beyond DB_PASSWORD
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trader -d trading"]
       interval: 10s
@@ -21,7 +21,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"  # localhost only: Redis has no password
     volumes:
       - redis_data:/data
     healthcheck:
@@ -34,7 +34,7 @@ services:
   prometheus:
     image: prom/prometheus:v2.47.0
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"  # localhost only: Prometheus has no auth
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -53,10 +53,10 @@ services:
   grafana:
     image: grafana/grafana:10.1.0
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"  # localhost only
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
       GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
       - grafana_data:/var/lib/grafana
@@ -71,7 +71,7 @@ services:
       context: .
       dockerfile: Dockerfile.dashboard
     ports:
-      - "8000:8000"
+      - "8000:8000"  # the one public service: basic auth, fails closed without DASHBOARD_PASSWORD
     environment:
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading

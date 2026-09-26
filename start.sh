@@ -24,7 +24,7 @@ fi
 source .env
 
 # Check required variables
-REQUIRED_VARS=("KRAKEN_API_KEY" "KRAKEN_API_SECRET" "GOOGLE_API_KEY" "DASHBOARD_PASSWORD")
+REQUIRED_VARS=("KRAKEN_API_KEY" "KRAKEN_API_SECRET" "GOOGLE_API_KEY" "DASHBOARD_PASSWORD" "GRAFANA_PASSWORD")
 MISSING=()
 
 for var in "${REQUIRED_VARS[@]}"; do
@@ -89,7 +89,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "📊 Dashboard:    http://localhost:8000 (user: ${DASHBOARD_USER:-admin}, password from .env)"
 echo "📈 Prometheus:   http://localhost:9090"
-echo "📉 Grafana:      http://localhost:3000 (admin/admin)"
+echo "📉 Grafana:      http://localhost:3000 (user: admin, password: GRAFANA_PASSWORD from .env)"
 echo ""
 echo "View logs:"
 echo "  docker-compose logs -f                    # All services"
