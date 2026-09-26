@@ -262,11 +262,14 @@ class KrakenRestClient:
         return await self._request("POST", "/0/private/TradeBalance", 
                                    {"asset": asset}, auth=True)
     
-    async def get_open_orders(self) -> Dict:
-        return await self._request("POST", "/0/private/OpenOrders", {}, auth=True)
+    async def get_open_orders(self, userref: int = None) -> Dict:
+        params = {"userref": userref} if userref is not None else {}
+        return await self._request("POST", "/0/private/OpenOrders", params, auth=True)
     
-    async def get_closed_orders(self, start: int = None, end: int = None) -> Dict:
+    async def get_closed_orders(self, start: int = None, end: int = None, userref: int = None) -> Dict:
         params = {}
+        if userref is not None:
+            params["userref"] = userref
         if start:
             params["start"] = start
         if end:
@@ -740,6 +743,21 @@ class KrakenExecutor:
             timestamp=time.time(),
             raw_response={"dry_run": True},
         )
+    
+    async def find_orders_by_userref(self, userref: int) -> List[Dict]:
+        """Open and recently closed spot orders tagged with ``userref``.
+
+        Filtered by Kraken (userref param) and again here, so the result is right even
+        if the filter isn't applied server-side. Each item: status, side, vol_exec.
+        """
+        open_ = (await self.rest.get_open_orders(userref=userref)).get("open", {})
+        closed = (await self.rest.get_closed_orders(userref=userref)).get("closed", {})
+        return [
+            {"txid": txid, "status": info.get("status"), "side": info.get("descr", {}).get("type"),
+             "vol_exec": float(info.get("vol_exec") or 0)}
+            for txid, info in {**open_, **closed}.items()
+            if int(info.get("userref") or 0) == userref
+        ]
     
     async def cancel_order(self, order_id: str) -> OrderResult:
         """Cancel an order"""

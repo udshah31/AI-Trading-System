@@ -1,6 +1,9 @@
 """
 Orchestrator - Coordinates analysis schedule and turns approved decisions into orders
 """
+import json
+import secrets
+import time
 import uuid
 
 from hybrid.agent_base import BaseAgent
@@ -42,6 +45,16 @@ class RedisHoldingsStore:
     async def remove(self, ticker: str) -> None:
         await self.client.hdel(self.key, ticker)
 
+    # Orders sent but not yet confirmed, written before sending (write-ahead)
+    async def load_pending(self) -> dict[str, dict]:
+        return {cid: json.loads(order) for cid, order in (await self.client.hgetall(f"{self.key}:pending")).items()}
+
+    async def save_pending(self, client_order_id: str, order: dict) -> None:
+        await self.client.hset(f"{self.key}:pending", client_order_id, json.dumps(order))
+
+    async def remove_pending(self, client_order_id: str) -> None:
+        await self.client.hdel(f"{self.key}:pending", client_order_id)
+
 
 class Orchestrator(BaseAgent):
     """Spot-only order policy for risk-approved quant decisions.
@@ -51,6 +64,12 @@ class Orchestrator(BaseAgent):
     Holdings are the bot's own fills. With a ``store`` they are loaded on start and
     saved on every fill, so a restarted bot can still close its positions; a store
     outage is logged and trading continues from memory.
+
+    Each order is saved as pending before it is sent, tagged with a Kraken userref.
+    On start, leftover pending orders (the bot died before their fill arrived) are
+    settled against Kraken: filled -> position recorded or removed; never reached
+    Kraken -> dropped; still open or lookup failed -> kept pending, which blocks new
+    orders for that ticker. In live mode an order that can't be saved isn't sent.
 
     Live mode (``exchange`` set): before each order the Kraken spot balance is
     checked. BUY is skipped if the account already holds the coin (e.g. from before
@@ -65,7 +84,7 @@ class Orchestrator(BaseAgent):
         self.exchange = exchange  # live Kraken spot executor, or None in dry-run
         self.store = store        # RedisHoldingsStore, or None to keep holdings in memory only
         self.holdings: dict[str, float] = {}  # ticker -> volume the bot bought and holds
-        self.pending: dict[str, dict] = {}    # client_order_id -> {ticker, side, volume}
+        self.pending: dict[str, dict] = {}    # client_order_id -> {ticker, side, volume, userref}
         self._checking: set[str] = set()      # tickers awaiting a balance check
         self.bus.subscribe(Channel.SIGNALS, self._on_signal)
         self.bus.subscribe(Channel.ORDERS, self._on_order)
@@ -80,7 +99,56 @@ class Orchestrator(BaseAgent):
                 print(f"[Orchestrator] Restored bot positions: {self.holdings or 'none'}")
             except Exception as e:
                 print(f"[Orchestrator] ⚠️ Could not load saved positions ({e}); starting with none")
+            await self._reconcile_pending()
         print("[Orchestrator] Started")
+
+    async def _reconcile_pending(self):
+        """Settle orders that were in flight when the previous process stopped."""
+        try:
+            leftover = await self.store.load_pending()
+        except Exception as e:
+            print(f"[Orchestrator] ⚠️ Could not load in-flight orders ({e})")
+            return
+        for cid, order in leftover.items():
+            ticker, side = order["ticker"], order["side"]
+            if not self.exchange:
+                print(f"[Orchestrator] Dropping simulated in-flight {side} {ticker}: no exchange to check")
+                await self._forget_pending(cid)
+                continue
+            try:
+                found = await self.exchange.find_orders_by_userref(order["userref"])
+            except Exception as e:
+                self.pending[cid] = order  # outcome unknown: keep blocking this ticker
+                print(f"[Orchestrator] ⚠️ {side} {ticker} still unresolved, Kraken lookup failed ({e}); "
+                      "not trading it until resolved")
+                continue
+            if any(o["status"] in ("pending", "open") for o in found):
+                self.pending[cid] = order
+                print(f"[Orchestrator] ⚠️ {side} {ticker} still open on Kraken; not trading it until it settles")
+                continue
+            filled = sum(o["vol_exec"] for o in found)
+            if filled > 0:
+                if side == "buy":
+                    self.holdings[ticker] = filled
+                else:
+                    remaining = self.holdings.get(ticker, 0.0) - filled
+                    if remaining > 0:
+                        self.holdings[ticker] = remaining
+                    else:
+                        self.holdings.pop(ticker, None)
+                await self._persist(ticker)
+                print(f"[Orchestrator] Recovered in-flight {side} {ticker}: filled {filled} on Kraken")
+            else:
+                print(f"[Orchestrator] In-flight {side} {ticker} never filled on Kraken; dropped")
+            await self._forget_pending(cid)
+
+    async def _forget_pending(self, client_order_id: str):
+        self.pending.pop(client_order_id, None)
+        if self.store:
+            try:
+                await self.store.remove_pending(client_order_id)
+            except Exception as e:
+                print(f"[Orchestrator] ⚠️ Could not clear in-flight order {client_order_id} ({e})")
 
     async def _on_signal(self, payload: dict):
         msg_type = payload.get("type")
@@ -107,16 +175,19 @@ class Orchestrator(BaseAgent):
         if payload.get("type") != "execution_result":
             return
         data = payload["data"]
-        order = self.pending.pop(data.get("client_order_id"), None)
+        cid = data.get("client_order_id")
+        order = self.pending.get(cid)
         status = "✅" if data["success"] else "❌"
         print(f"[Orchestrator] Execution: {status} {data['symbol']} - {data['message']}")
-        if not order or not data["success"]:
+        if not order:
             return
-        if order["side"] == "buy":
-            self.holdings[order["ticker"]] = order["volume"]
-        else:
-            self.holdings.pop(order["ticker"], None)
-        await self._persist(order["ticker"])
+        if data["success"]:
+            if order["side"] == "buy":
+                self.holdings[order["ticker"]] = order["volume"]
+            else:
+                self.holdings.pop(order["ticker"], None)
+            await self._persist(order["ticker"])  # position first, so a crash here is re-settled on start
+        await self._forget_pending(cid)
 
     async def _route_approved(self, data: dict):
         ticker, action = data["ticker"], data.get("action")
@@ -155,9 +226,9 @@ class Orchestrator(BaseAgent):
                     return
 
         if action == "BUY":
-            self._send_order(ticker, "buy", data["shares"], data)
+            await self._send_order(ticker, "buy", data["shares"], data)
         else:
-            self._send_order(ticker, "sell", held, data)
+            await self._send_order(ticker, "sell", held, data)
 
     async def _persist(self, ticker: str) -> None:
         if not self.store:
@@ -176,9 +247,21 @@ class Orchestrator(BaseAgent):
         balances = await self.exchange.get_balances()
         return sum(float(balances[code].total) for code in kraken_balance_codes(ticker) if code in balances)
 
-    def _send_order(self, ticker: str, side: str, volume: float, data: dict):
+    async def _send_order(self, ticker: str, side: str, volume: float, data: dict):
         client_order_id = uuid.uuid4().hex[:16]
-        self.pending[client_order_id] = {"ticker": ticker, "side": side, "volume": volume}
+        userref = secrets.randbelow(2**31 - 1) + 1  # Kraken userref is a positive int32
+        order = {"ticker": ticker, "side": side, "volume": volume, "userref": userref, "sent_at": time.time()}
+        self.pending[client_order_id] = order  # in memory first: blocks this ticker while saving
+        if self.store:
+            try:
+                await self.store.save_pending(client_order_id, order)
+            except Exception as e:
+                if self.exchange:
+                    self.pending.pop(client_order_id, None)
+                    print(f"[Orchestrator] Skip {side} {ticker}: could not record the order before "
+                          f"sending ({e}); a crash could lose track of it")
+                    return
+                print(f"[Orchestrator] ⚠️ Could not record simulated order ({e}); sending anyway")
         self.bus.publish(Channel.ORDERS, {
             "type": "execute_order",
             "source": self.name,
@@ -191,6 +274,7 @@ class Orchestrator(BaseAgent):
                 "price": data.get("price"),
                 "stop_loss": data.get("stop_loss"),
                 "client_order_id": client_order_id,
+                "userref": userref,
             }
         }, self.name)
         print(f"[Orchestrator] Order sent: {side} {volume} {ticker} ({client_order_id})")
