@@ -37,6 +37,7 @@ DATABASE_URL = os.getenv(
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 ANALYSIS_INTERVAL_S = 300
+LEARNING_INTERVAL_S = 24 * 3600
 
 
 class PaperTradingSystem:
@@ -149,9 +150,10 @@ class PaperTradingSystem:
         
         # Schedule periodic analysis
         analysis_task = asyncio.create_task(self._analysis_loop())
+        learning_task = asyncio.create_task(self._learning_loop())
         heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         equity_snapshot_task = asyncio.create_task(self._equity_snapshot_loop())
-        self.background_tasks.extend([analysis_task, heartbeat_task, equity_snapshot_task])
+        self.background_tasks.extend([analysis_task, heartbeat_task, equity_snapshot_task, learning_task])
         
         try:
             # Wait for shutdown signal
@@ -193,6 +195,7 @@ class PaperTradingSystem:
             
             orchestrator = self.agents.get('orchestrator')
             if orchestrator:
+                await self._apply_active_weights()
                 print("\n🔄 Running scheduled analysis...")
                 try:
                     await self.bus.client.set("system:last_analysis", str(time.time()))
@@ -200,6 +203,32 @@ class PaperTradingSystem:
                     pass
                 await orchestrator.analyze("BTC/USDT")
                 await orchestrator.analyze("ETH/USDT")
+    
+    async def _apply_active_weights(self):
+        """Use the technical weights last approved on the dashboard (none: keep the starting ones)."""
+        if not self.storage:
+            return
+        try:
+            approved = await self.storage.learning.active_weights()
+        except Exception as e:
+            print(f"[Learning] Could not read approved weights: {e}")
+            return
+        current = self.config.tech_weights()
+        if approved and any(abs(approved[k] - current.get(k, 0)) > 1e-9 for k in approved):
+            self.config.set_tech_weights(approved)
+            print(f"[Learning] Using approved weights: {approved}")
+    
+    async def _learning_loop(self):
+        """Once a day: record outcomes, re-fit, store a proposal for approval (never applied here)."""
+        from hybrid.learning import run_learning_cycle
+        await asyncio.sleep(600)  # let the system settle first
+        while self.running:
+            if self.storage:
+                try:
+                    await run_learning_cycle(self.storage, self.config)
+                except Exception as e:
+                    print(f"[Learning] Cycle failed: {e}")
+            await asyncio.sleep(LEARNING_INTERVAL_S)
     
     async def _equity_snapshot_loop(self):
         """Publish equity history snapshots to the dashboard every 60s"""

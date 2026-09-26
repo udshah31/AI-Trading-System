@@ -193,6 +193,24 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
 .accuracy h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
 .accuracy .pct { font-weight: 700; }
 
+/* Learning: indicator weights */
+.learn { margin-top: 48px; padding-top: 28px; border-top: 3px double var(--ink); }
+.learn-lead { font-size: 18px; max-width: 60ch; margin-bottom: 16px; }
+.learn-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.learn .meter { max-width: 420px; margin: 4px 0 20px; }
+.evidence { font-size: 15px; line-height: 1.6; max-width: 60ch; }
+.evidence strong { font-weight: 700; }
+.decide { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.btn { padding: 8px 16px; font-size: 15px; font-weight: 700; border-radius: 4px; border: 2px solid var(--blue); color: var(--blue); }
+.btn.primary { background: var(--blue); color: var(--paper); }
+.btn.primary.confirm { background: var(--paper); color: var(--blue); }
+.btn:hover { box-shadow: 0 0 0 3px var(--blue-wash); }
+.change-up { font-weight: 700; }
+.change-down { font-weight: 700; }  /* a smaller weight is not a loss: no red ink */
+.history { list-style: none; margin-top: 12px; }
+.history li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 14px; }
+@media (max-width: 960px) { .learn-grid { grid-template-columns: minmax(0, 1fr); } }
+
 /* Activity log */
 .log { margin-top: 48px; border-top: 1px solid var(--rule); padding-top: 16px; }
 .log summary { cursor: pointer; font-size: 16px; font-weight: 700; }
@@ -336,6 +354,26 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
         <table><thead><tr><th>Confidence</th><th class="num">Labelled</th><th class="num">Match</th></tr></thead><tbody id="accBands"></tbody></table>
       </div>
     </div>
+  </section>
+
+  <!-- Learning: technical weights re-fit from recorded outcomes, applied only on approval -->
+  <section class="learn" aria-labelledby="learnHead">
+    <div class="section-head">
+      <h2 id="learnHead">Indicator weights</h2>
+      <p>Re-fit once a day from what happened after each decision.</p>
+    </div>
+    <p class="learn-lead" id="learnLead">Loading what the bot has learned</p>
+    <div id="learnProgress"></div>
+    <div class="learn-grid">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Indicator</th><th class="num">In use</th><th class="num" id="learnProposedHead">Proposed</th><th class="num" id="learnChangeHead">Change</th></tr></thead>
+          <tbody id="learnWeights"></tbody>
+        </table>
+      </div>
+      <div id="learnEvidence"></div>
+    </div>
+    <ul class="history" id="learnHistory"></ul>
   </section>
 
   <details class="log" id="logBox">
@@ -654,6 +692,82 @@ async function loadAccuracy() {
   $('accBands').innerHTML = acc.typesafe_by_confidence.map((b) => `<tr><td>${bandNames[b.band]}</td><td class="num">${b.labelled}</td><td class="num">${pct(b)}</td></tr>`).join('');
 }
 
+// ── Learning ──
+const INDICATORS = { rsi: 'RSI (overbought / oversold)', ema: 'EMA trend', bollinger: 'Bollinger bands', volume: 'Volume' };
+const pct0 = (v) => `${Math.round(v * 100)}%`;
+const ic = (v) => v == null ? 'n/a' : v.toFixed(2);
+const day = (iso) => new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short' });
+let learnConfirmTimer = null;
+
+async function loadLearning() {
+  const st = await api('/api/learning');
+  const pending = st.pending;
+  const inUse = pending ? pending.current : st.active.weights;
+  if (pending) $('learnLead').textContent = 'A change to the indicator weights is waiting for your approval.';
+  else if (st.active.source === 'approved') $('learnLead').textContent = `Using the weights you approved on ${day(st.active.since)}.`;
+  else $('learnLead').textContent = 'Using the starting weights. Nothing changes until you approve a proposal.';
+
+  const { labelled_days: have, needed } = st.progress;
+  $('learnProgress').innerHTML = have < needed
+    ? `<p class="note">It proposes changes once it has ${needed} coin-days of decisions with a known next-day outcome. It has ${have}.</p>
+       <div class="meter" role="meter" aria-label="Learning data collected" aria-valuemin="0" aria-valuemax="${needed}" aria-valuenow="${have}"><span style="width:${Math.min(100, have / needed * 100)}%"></span></div>`
+    : `<p class="note">${have} coin-days with known outcomes so far.</p>`;
+
+  $('learnProposedHead').hidden = $('learnChangeHead').hidden = !pending;
+  $('learnWeights').innerHTML = Object.keys(INDICATORS).map((k) => {
+    const now = inUse[k] ?? 0;
+    if (!pending) return `<tr><td>${INDICATORS[k]}</td><td class="num">${pct0(now)}</td></tr>`;
+    const next = pending.proposed[k] ?? 0, d = next - now;
+    const change = Math.abs(d) < 0.005 ? '<span class="muted">same</span>'
+      : `<span class="${d > 0 ? 'change-up' : 'change-down'}">${d > 0 ? '+' : '−'}${Math.round(Math.abs(d) * 100)} pts</span>`;
+    return `<tr><td>${INDICATORS[k]}</td><td class="num">${pct0(now)}</td><td class="num"><strong>${pct0(next)}</strong></td><td class="num">${change}</td></tr>`;
+  }).join('');
+
+  if (pending) {
+    const m = pending.metrics;
+    $('learnEvidence').innerHTML = `<p class="evidence">It held back the <strong>${m.n_test} most recent coin-days</strong>
+      (${day(m.test_from)} to ${day(m.test_to)}) and learned only from the ${m.n_train} before them.
+      On the held-back days, scores from the proposed weights tracked the next day's price move with a correlation of
+      <strong>${ic(m.test_ic_proposed)}</strong>, against ${ic(m.test_ic_current)} for the weights in use.
+      It needed at least ${ic(m.test_ic_needed)} to count as more than chance.</p>
+      <div class="decide">
+        <button type="button" class="btn primary" id="approveBtn">Approve these weights</button>
+        <button type="button" class="btn" id="rejectBtn">Keep current weights</button>
+      </div>`;
+    $('approveBtn').addEventListener('click', () => approveWeights(pending.id));
+    $('rejectBtn').addEventListener('click', () => decideWeights(pending.id, 'reject'));
+  } else {
+    $('learnEvidence').innerHTML = '<p class="evidence muted">When a re-fit beats the weights in use on days it didn\'t learn from, the proposal and its evidence appear here for you to approve or turn down.</p>';
+  }
+
+  const words = { approved: 'Approved', rejected: 'Turned down', superseded: 'Replaced by a newer proposal' };
+  $('learnHistory').innerHTML = st.history.map((p) =>
+    `<li><span>${day(p.created_at)} proposal</span><span class="${p.status === 'rejected' ? 'muted' : ''}">${words[p.status] || esc(p.status)}${p.decided_at ? `, ${day(p.decided_at)}` : ''}</span></li>`).join('');
+}
+
+function approveWeights(id) {
+  const btn = $('approveBtn');
+  if (!btn.classList.contains('confirm')) {  // two steps: this changes live trading
+    btn.classList.add('confirm');
+    btn.textContent = 'Confirm: trade with these weights';
+    clearTimeout(learnConfirmTimer);
+    learnConfirmTimer = setTimeout(() => { btn.classList.remove('confirm'); btn.textContent = 'Approve these weights'; }, 6000);
+    return;
+  }
+  decideWeights(id, 'approve');
+}
+
+async function decideWeights(id, action) {
+  try {
+    await api(`/api/learning/proposals/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+    log(action === 'approve' ? 'Approved new indicator weights. The bot uses them from its next check, within 5 minutes.'
+                             : 'Kept the current indicator weights.', 'Learning');
+    await loadLearning();
+  } catch (err) {
+    log(`Decision not saved: ${err.message}. Reload the page to see the latest proposal.`, 'Learning', 'error');
+  }
+}
+
 // ── Live feed ──
 let ws = null, retries = 0;
 function setFeed(on) {
@@ -708,6 +822,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refresh();
   api('/api/sniper/alerts').then((l) => l.slice(0, 12).reverse().forEach(addSniperAlert)).catch(() => {});
   loadRuns().then(loadAccuracy).catch((e) => log(`Could not load the audit: ${e.message}`, 'Audit', 'error'));
+  loadLearning().catch((e) => log(`Could not load indicator weights: ${e.message}`, 'Learning', 'error'));
+  setInterval(() => loadLearning().catch(() => {}), 300000);
   setInterval(renderSchedule, 15000);
   window.addEventListener('resize', () => renderBand());
   setInterval(() => { loadBand().catch(() => {}); api('/api/agents').then(renderAgents).catch(() => {}); }, 30000);
