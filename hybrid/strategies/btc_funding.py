@@ -178,7 +178,10 @@ class BTCFundingStrategy:
         KrakenExecutor.get_ticker only speaks the spot Ticker API, so it can't be used here.
         """
         # ponytail: futures REST only, WS funding stream if we need sub-second
-        data = await self.kraken_futures.rest.get_futures_tickers()
+        rest = self.kraken_futures.rest
+        if rest is None:
+            raise RuntimeError("Kraken futures client not initialized")
+        data = await rest.get_futures_tickers()
         for t in data.get("tickers", []):
             if t.get("symbol") == PERP_SYMBOL:
                 return t

@@ -2,6 +2,7 @@
 Data Agent - Live market data from CCXT
 """
 import asyncio
+from typing import Optional
 import ccxt.async_support as ccxt
 from hybrid.agent_base import BaseAgent
 from hybrid.messaging import MessageBus, Channel
@@ -12,8 +13,8 @@ class DataAgent(BaseAgent):
         super().__init__("data_agent", bus)
         self.symbols = symbols
         self.exchange_id = exchange_id
-        self.exchange = None
-        self.tasks = []
+        self.exchange: Optional[ccxt.Exchange] = None
+        self.tasks: list[asyncio.Task] = []
     
     async def handle_message(self, payload: dict):
         pass  # No incoming messages for data agent
@@ -37,11 +38,14 @@ class DataAgent(BaseAgent):
             await self.exchange.close()
     
     async def _stream_ticker(self, symbol: str):
+        exchange = self.exchange
+        if exchange is None:
+            raise RuntimeError("DataAgent.start() must run before streaming")
         while self.running:
             try:
                 # Add timeout to fetch_ticker to prevent hanging
                 ticker = await asyncio.wait_for(
-                    self.exchange.fetch_ticker(symbol),
+                    exchange.fetch_ticker(symbol),
                     timeout=10.0  # 10 second timeout per request
                 )
                 self.bus.publish(Channel.MARKET_DATA, {

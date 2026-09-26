@@ -8,7 +8,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional, List, Dict, Any
+from typing import Any, AsyncIterator, Dict, List, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -18,15 +18,17 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import (
     create_async_engine, AsyncSession, async_sessionmaker
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB as PG_JSONB
+from sqlalchemy import select
 from sqlalchemy.sql import func
 
 # ponytail: String/JSON for PG+sqlite compat; restore PG_UUID/JSONB via dialect helper if PG perf needed
 UUID = PG_UUID
 JSONB = PG_JSONB
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 
 # =============================================================================
@@ -36,22 +38,22 @@ Base = declarative_base()
 class Trade(Base):
     __tablename__ = "trades"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
-    symbol = Column(String(20), nullable=False, index=True)
-    side = Column(String(10), nullable=False)  # buy, sell
-    volume = Column(Numeric(18, 8), nullable=False)
-    price = Column(Numeric(18, 8), nullable=False)
-    fee = Column(Numeric(18, 8), default=0)
-    fee_currency = Column(String(10))
-    pnl = Column(Numeric(18, 8), default=0)
-    strategy = Column(String(50), index=True)
-    exchange = Column(String(20))
-    order_id = Column(String(100), index=True)
-    client_order_id = Column(String(100))
-    status = Column(String(20))  # open, closed, canceled, rejected
-    trade_metadata = Column(JSON, default={})
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)  # buy, sell
+    volume: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    fee: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8), default=0)
+    fee_currency: Mapped[Optional[str]] = mapped_column(String(10))
+    pnl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8), default=0)
+    strategy: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    exchange: Mapped[Optional[str]] = mapped_column(String(20))
+    order_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    client_order_id: Mapped[Optional[str]] = mapped_column(String(100))
+    status: Mapped[Optional[str]] = mapped_column(String(20))  # open, closed, canceled, rejected
+    trade_metadata: Mapped[Optional[dict]] = mapped_column(JSON, default={})
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     __table_args__ = (
         Index('ix_trades_symbol_timestamp', 'symbol', 'timestamp'),
@@ -62,36 +64,36 @@ class Trade(Base):
 class Position(Base):
     __tablename__ = "positions"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    symbol = Column(String(20), nullable=False, index=True)
-    strategy = Column(String(50), index=True)
-    exchange = Column(String(20))
-    side = Column(String(10))  # long, short
-    volume = Column(Numeric(18, 8), nullable=False)
-    entry_price = Column(Numeric(18, 8), nullable=False)
-    current_price = Column(Numeric(18, 8))
-    unrealized_pnl = Column(Numeric(18, 8), default=0)
-    realized_pnl = Column(Numeric(18, 8), default=0)
-    stop_loss = Column(Numeric(18, 8))
-    take_profit = Column(Numeric(18, 8))
-    opened_at = Column(DateTime(timezone=True), nullable=False)
-    closed_at = Column(DateTime(timezone=True))
-    is_open = Column(Boolean, default=True, index=True)
-    trade_metadata = Column(JSON, default={})
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    strategy: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    exchange: Mapped[Optional[str]] = mapped_column(String(20))
+    side: Mapped[Optional[str]] = mapped_column(String(10))  # long, short
+    volume: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    current_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    unrealized_pnl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8), default=0)
+    realized_pnl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8), default=0)
+    stop_loss: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    take_profit: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    is_open: Mapped[Optional[bool]] = mapped_column(Boolean, default=True, index=True)
+    trade_metadata: Mapped[Optional[dict]] = mapped_column(JSON, default={})
 
 
 class EquityCurve(Base):
     __tablename__ = "equity_curve"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
-    account = Column(String(50), nullable=False, index=True)
-    equity = Column(Numeric(18, 2), nullable=False)
-    cash = Column(Numeric(18, 2))
-    positions_value = Column(Numeric(18, 2))
-    daily_pnl = Column(Numeric(18, 2))
-    drawdown_pct = Column(Numeric(10, 6))
-    trade_metadata = Column(JSON, default={})
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    account: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    equity: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    cash: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2))
+    positions_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2))
+    daily_pnl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2))
+    drawdown_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
+    trade_metadata: Mapped[Optional[dict]] = mapped_column(JSON, default={})
     
     __table_args__ = (
         Index('ix_equity_account_timestamp', 'account', 'timestamp'),
@@ -101,18 +103,18 @@ class EquityCurve(Base):
 class Signal(Base):
     __tablename__ = "signals"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
-    symbol = Column(String(20), nullable=False, index=True)
-    agent = Column(String(50), nullable=False)
-    signal_type = Column(String(50))  # quant, sentiment, technical, rl, sniper
-    action = Column(String(20))  # buy, sell, hold
-    strength = Column(Numeric(5, 4))  # 0-1
-    confidence = Column(Numeric(5, 4))
-    features = Column(JSON, default={})
-    processed = Column(Boolean, default=False)
-    executed = Column(Boolean, default=False)
-    trade_id = Column(String(36), ForeignKey('trades.id'))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    agent: Mapped[str] = mapped_column(String(50), nullable=False)
+    signal_type: Mapped[Optional[str]] = mapped_column(String(50))  # quant, sentiment, technical, rl, sniper
+    action: Mapped[Optional[str]] = mapped_column(String(20))  # buy, sell, hold
+    strength: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))  # 0-1
+    confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))
+    features: Mapped[Optional[dict]] = mapped_column(JSON, default={})
+    processed: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    executed: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    trade_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('trades.id'))
     
     __table_args__ = (
         Index('ix_signals_symbol_timestamp', 'symbol', 'timestamp'),
@@ -123,45 +125,45 @@ class Signal(Base):
 class Order(Base):
     __tablename__ = "orders"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
-    symbol = Column(String(20), nullable=False, index=True)
-    side = Column(String(10), nullable=False)
-    order_type = Column(String(20))  # market, limit, stop
-    volume = Column(Numeric(18, 8), nullable=False)
-    price = Column(Numeric(18, 8))
-    filled_volume = Column(Numeric(18, 8), default=0)
-    avg_fill_price = Column(Numeric(18, 8))
-    status = Column(String(20), index=True)  # open, partial, filled, canceled, rejected
-    exchange = Column(String(20))
-    exchange_order_id = Column(String(100), index=True)
-    client_order_id = Column(String(100))
-    strategy = Column(String(50))
-    trade_metadata = Column(JSON, default={})
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)
+    order_type: Mapped[Optional[str]] = mapped_column(String(20))  # market, limit, stop
+    volume: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    filled_volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8), default=0)
+    avg_fill_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    status: Mapped[Optional[str]] = mapped_column(String(20), index=True)  # open, partial, filled, canceled, rejected
+    exchange: Mapped[Optional[str]] = mapped_column(String(20))
+    exchange_order_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    client_order_id: Mapped[Optional[str]] = mapped_column(String(100))
+    strategy: Mapped[Optional[str]] = mapped_column(String(50))
+    trade_metadata: Mapped[Optional[dict]] = mapped_column(JSON, default={})
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
 
 class StrategyPerformance(Base):
     __tablename__ = "strategy_performance"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    date = Column(DateTime(timezone=True), nullable=False, index=True)
-    strategy = Column(String(50), nullable=False, index=True)
-    symbol = Column(String(20), nullable=False)
-    trades_count = Column(Integer, default=0)
-    winning_trades = Column(Integer, default=0)
-    losing_trades = Column(Integer, default=0)
-    gross_profit = Column(Numeric(18, 2), default=0)
-    gross_loss = Column(Numeric(18, 2), default=0)
-    net_pnl = Column(Numeric(18, 2), default=0)
-    max_drawdown = Column(Numeric(10, 6))
-    sharpe_ratio = Column(Numeric(10, 4))
-    win_rate = Column(Numeric(5, 4))
-    profit_factor = Column(Numeric(10, 4))
-    avg_trade = Column(Numeric(18, 2))
-    best_trade = Column(Numeric(18, 2))
-    worst_trade = Column(Numeric(18, 2))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    strategy: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    trades_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    winning_trades: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    losing_trades: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    gross_profit: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2), default=0)
+    gross_loss: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2), default=0)
+    net_pnl: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2), default=0)
+    max_drawdown: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
+    sharpe_ratio: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    win_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))
+    profit_factor: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4))
+    avg_trade: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2))
+    best_trade: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2))
+    worst_trade: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2))
     
     __table_args__ = (
         Index('ix_perf_strategy_date', 'strategy', 'date'),
@@ -172,14 +174,14 @@ class StrategyPerformance(Base):
 class AgentLog(Base):
     __tablename__ = "agent_logs"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
-    agent = Column(String(50), nullable=False, index=True)
-    level = Column(String(10))  # debug, info, warning, error, critical
-    message = Column(Text)
-    context = Column(JSON, default={})
-    trace_id = Column(String(50), index=True)
-    span_id = Column(String(50))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    agent: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    level: Mapped[Optional[str]] = mapped_column(String(10))  # debug, info, warning, error, critical
+    message: Mapped[Optional[str]] = mapped_column(Text)
+    context: Mapped[Optional[dict]] = mapped_column(JSON, default={})
+    trace_id: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    span_id: Mapped[Optional[str]] = mapped_column(String(50))
     
     __table_args__ = (
         Index('ix_logs_agent_timestamp', 'agent', 'timestamp'),
@@ -190,19 +192,19 @@ class AgentLog(Base):
 class MarketData(Base):
     __tablename__ = "market_data"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
-    symbol = Column(String(20), nullable=False, index=True)
-    exchange = Column(String(20), nullable=False)
-    open = Column(Numeric(18, 8))
-    high = Column(Numeric(18, 8))
-    low = Column(Numeric(18, 8))
-    close = Column(Numeric(18, 8), nullable=False)
-    volume = Column(Numeric(24, 8))
-    vwap = Column(Numeric(18, 8))
-    bid = Column(Numeric(18, 8))
-    ask = Column(Numeric(18, 8))
-    timeframe = Column(String(10))  # 1m, 5m, 1h, 1d
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    open: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    high: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    low: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    close: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    volume: Mapped[Optional[Decimal]] = mapped_column(Numeric(24, 8))
+    vwap: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    bid: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    ask: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    timeframe: Mapped[Optional[str]] = mapped_column(String(10))  # 1m, 5m, 1h, 1d
     
     __table_args__ = (
         Index('ix_market_symbol_timestamp', 'symbol', 'timestamp'),
@@ -213,16 +215,16 @@ class MarketData(Base):
 class SystemEvent(Base):
     __tablename__ = "system_events"
     
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
-    event_type = Column(String(50), index=True)  # startup, shutdown, error, alert, config_change
-    severity = Column(String(10))  # info, warning, critical
-    source = Column(String(50))
-    message = Column(Text)
-    details = Column(JSON, default={})
-    acknowledged = Column(Boolean, default=False)
-    acknowledged_at = Column(DateTime(timezone=True))
-    acknowledged_by = Column(String(50))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    event_type: Mapped[Optional[str]] = mapped_column(String(50), index=True)  # startup, shutdown, error, alert, config_change
+    severity: Mapped[Optional[str]] = mapped_column(String(10))  # info, warning, critical
+    source: Mapped[Optional[str]] = mapped_column(String(50))
+    message: Mapped[Optional[str]] = mapped_column(Text)
+    details: Mapped[Optional[dict]] = mapped_column(JSON, default={})
+    acknowledged: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    acknowledged_by: Mapped[Optional[str]] = mapped_column(String(50))
 
 
 # =============================================================================
@@ -259,7 +261,7 @@ class DatabaseManager:
         await self.engine.dispose()
     
     @asynccontextmanager
-    async def session(self) -> AsyncSession:
+    async def session(self) -> AsyncIterator[AsyncSession]:
         """Get a database session"""
         async with self.session_factory() as session:
             try:
@@ -269,10 +271,10 @@ class DatabaseManager:
                 await session.rollback()
                 raise
     
-    async def execute_raw(self, query: str, params: dict = None):
+    async def execute_raw(self, query: str, params: Optional[dict] = None):
         """Execute raw SQL"""
         async with self.session() as session:
-            result = await session.execute(query, params or {})
+            result = await session.execute(text(query), params or {})
             return result.fetchall()
 
 
@@ -304,25 +306,25 @@ class TradeRepository:
     async def get_by_symbol(self, symbol: str, limit: int = 100) -> List[Trade]:
         async with self.db.session() as session:
             result = await session.execute(
-                Trade.__table__.select()
+                select(Trade)
                 .where(Trade.symbol == symbol)
                 .order_by(Trade.timestamp.desc())
                 .limit(limit)
             )
-            return result.scalars().all()
+            return list(result.scalars().all())
     
     async def get_by_strategy(self, strategy: str, days: int = 30) -> List[Trade]:
         async with self.db.session() as session:
             cutoff = datetime.utcnow() - timedelta(days=days)
             result = await session.execute(
-                Trade.__table__.select()
+                select(Trade)
                 .where(Trade.strategy == strategy)
                 .where(Trade.timestamp >= cutoff)
                 .order_by(Trade.timestamp.desc())
             )
-            return result.scalars().all()
+            return list(result.scalars().all())
     
-    async def get_pnl_summary(self, strategy: str = None, days: int = 30) -> Dict:
+    async def get_pnl_summary(self, strategy: Optional[str] = None, days: int = 30) -> Dict:
         async with self.db.session() as session:
             cutoff = datetime.utcnow() - timedelta(days=days)
             query = """
@@ -339,12 +341,12 @@ class TradeRepository:
                 FROM trades
                 WHERE timestamp >= :cutoff
             """
-            params = {"cutoff": cutoff}
+            params: Dict[str, Any] = {"cutoff": cutoff}
             if strategy:
                 query += " AND strategy = :strategy"
                 params["strategy"] = strategy
             
-            result = await session.execute(query, params)
+            result = await session.execute(text(query), params)
             row = result.fetchone()
             return dict(row._mapping) if row else {}
 
@@ -371,16 +373,16 @@ class PositionRepository:
                 await session.refresh(position)
                 return position
     
-    async def get_open_positions(self, strategy: str = None) -> List[Position]:
+    async def get_open_positions(self, strategy: Optional[str] = None) -> List[Position]:
         async with self.db.session() as session:
-            query = Position.__table__.select().where(Position.is_open == True)
+            query = select(Position).where(Position.is_open == True)
             if strategy:
                 query = query.where(Position.strategy == strategy)
             result = await session.execute(query)
-            return result.scalars().all()
+            return list(result.scalars().all())
     
     async def close_position(self, position_id: str, close_price: Decimal, 
-                            realized_pnl: Decimal) -> Position:
+                            realized_pnl: Decimal) -> Optional[Position]:
         async with self.db.session() as session:
             position = await session.get(Position, position_id)
             if position:
@@ -407,7 +409,7 @@ class EquityRepository:
     async def get_latest(self, account: str) -> Optional[EquityCurve]:
         async with self.db.session() as session:
             result = await session.execute(
-                EquityCurve.__table__.select()
+                select(EquityCurve)
                 .where(EquityCurve.account == account)
                 .order_by(EquityCurve.timestamp.desc())
                 .limit(1)
@@ -418,12 +420,12 @@ class EquityRepository:
         async with self.db.session() as session:
             cutoff = datetime.utcnow() - timedelta(days=days)
             result = await session.execute(
-                EquityCurve.__table__.select()
+                select(EquityCurve)
                 .where(EquityCurve.account == account)
                 .where(EquityCurve.timestamp >= cutoff)
                 .order_by(EquityCurve.timestamp.asc())
             )
-            return result.scalars().all()
+            return list(result.scalars().all())
 
 
 class SignalRepository:
@@ -441,14 +443,14 @@ class SignalRepository:
     async def get_unprocessed(self, limit: int = 100) -> List[Signal]:
         async with self.db.session() as session:
             result = await session.execute(
-                Signal.__table__.select()
+                select(Signal)
                 .where(Signal.processed == False)
                 .order_by(Signal.timestamp.asc())
                 .limit(limit)
             )
-            return result.scalars().all()
+            return list(result.scalars().all())
     
-    async def mark_processed(self, signal_id: str, trade_id: str = None):
+    async def mark_processed(self, signal_id: str, trade_id: Optional[str] = None):
         async with self.db.session() as session:
             signal = await session.get(Signal, signal_id)
             if signal:
@@ -474,7 +476,7 @@ class MarketDataRepository:
     async def get_latest(self, symbol: str, exchange: str) -> Optional[MarketData]:
         async with self.db.session() as session:
             result = await session.execute(
-                MarketData.__table__.select()
+                select(MarketData)
                 .where(MarketData.symbol == symbol)
                 .where(MarketData.exchange == exchange)
                 .order_by(MarketData.timestamp.desc())
@@ -487,7 +489,7 @@ class MarketDataRepository:
                         timeframe: str = "1h") -> List[MarketData]:
         async with self.db.session() as session:
             result = await session.execute(
-                MarketData.__table__.select()
+                select(MarketData)
                 .where(MarketData.symbol == symbol)
                 .where(MarketData.exchange == exchange)
                 .where(MarketData.timeframe == timeframe)
@@ -495,7 +497,7 @@ class MarketDataRepository:
                 .where(MarketData.timestamp <= end)
                 .order_by(MarketData.timestamp.asc())
             )
-            return result.scalars().all()
+            return list(result.scalars().all())
 
 
 
@@ -510,7 +512,7 @@ class OrderRepository:
             return order
     
     async def update_status(self, order_id: str, status: str, 
-                          filled_volume: Decimal = None, avg_price: Decimal = None):
+                          filled_volume: Optional[Decimal] = None, avg_price: Optional[Decimal] = None):
         async with self.db.session() as session:
             order = await session.get(Order, order_id)
             if order:
@@ -562,7 +564,7 @@ class StorageService:
         equity = EquityCurve(**kwargs)
         return await self.equity.save(equity)
     
-    async def record_market_data(self, **kwargs) -> MarketData:
+    async def record_market_data(self, **kwargs) -> int:
         data = MarketData(**kwargs)
         return await self.market_data.save_batch([data])
     

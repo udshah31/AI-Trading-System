@@ -10,7 +10,7 @@ It will refuse to execute if paper trading mode is not enabled.
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from hybrid.config import HybridConfig
 from hybrid.risk_manager import RiskAssessment
@@ -71,7 +71,7 @@ class AlpacaExecutor:
 
         self.config = config
         self.dry_run = dry_run
-        self._client = None
+        self._client: Optional[Any] = None  # alpaca TradingClient when live
 
         if not dry_run:
             self._init_alpaca_client()
@@ -185,6 +185,8 @@ class AlpacaExecutor:
                 time_in_force=TimeInForce.DAY,
             )
 
+            if self._client is None:
+                raise RuntimeError("Alpaca client not initialized")
             order = self._client.submit_order(order_request)
             result.success = True
             result.order_id = str(order.id)

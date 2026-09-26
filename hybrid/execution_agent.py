@@ -11,6 +11,7 @@ from hybrid.kraken_executor import (
     KrakenExecutor,
     OrderRequest,
 )
+from typing import Any, Optional
 
 
 class ExecutionAgent(BaseAgent):
@@ -18,9 +19,9 @@ class ExecutionAgent(BaseAgent):
         super().__init__("execution_agent", bus)
         self.config = config
         self.dry_run = dry_run
-        self.kraken_spot = None
-        self.kraken_futures = None
-        self.alpaca = None
+        self.kraken_spot: Optional[KrakenExecutor] = None
+        self.kraken_futures: Optional[KrakenExecutor] = None
+        self.alpaca: Optional[Any] = None  # AlpacaExecutor when not dry-run
         self.bus.subscribe(Channel.ORDERS, self._on_execution_request)
     
     async def handle_message(self, payload: dict):
@@ -91,7 +92,7 @@ class ExecutionAgent(BaseAgent):
         except Exception as e:
             await self._send_result(False, symbol, str(e), client_order_id=client_order_id)
     
-    def _route_exchange(self, symbol: str, asset_type: str) -> str:
+    def _route_exchange(self, symbol: str, asset_type: str) -> Optional[str]:
         is_crypto = "/" in symbol or "-" in symbol or asset_type == "crypto"
         is_futures = "PERP" in symbol.upper() or asset_type == "futures"
         
@@ -121,11 +122,13 @@ class ExecutionAgent(BaseAgent):
             reduce_only=data.get("reduce_only", False)
         )
         
+        if executor is None:
+            raise RuntimeError(f"{exchange} not initialized")
         result = await executor.place_order(order)
         
         class SimpleResult:
             success: bool
-            order_id: str
+            order_id: Optional[str]
             message: str
         
         r = SimpleResult()
@@ -143,6 +146,8 @@ class ExecutionAgent(BaseAgent):
         assessment.position_size_shares = data["volume"]
         assessment.stop_loss_price = data.get("stop_loss", 0)
         
+        if self.alpaca is None:
+            raise RuntimeError("Alpaca executor not initialized")
         result = self.alpaca.execute(
             ticker=data["symbol"],
             action=data["side"].upper(),
@@ -152,7 +157,7 @@ class ExecutionAgent(BaseAgent):
         
         class SimpleResult:
             success: bool
-            order_id: str
+            order_id: Optional[str]
             message: str
         
         r = SimpleResult()
@@ -161,8 +166,8 @@ class ExecutionAgent(BaseAgent):
         r.message = result.message
         return r
     
-    async def _send_result(self, success: bool, symbol: str, message: str, order_id: str = None, exchange: str = "",
-                           client_order_id: str = None):
+    async def _send_result(self, success: bool, symbol: str, message: str, order_id: Optional[str] = None, exchange: str = "",
+                           client_order_id: Optional[str] = None):
         self.bus.publish(Channel.ORDERS, {
             "type": "execution_result",
             "source": "execution_agent",

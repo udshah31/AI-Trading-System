@@ -12,7 +12,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional, Dict, List, Any
+from typing import TYPE_CHECKING, Optional, Dict, List, Any, TypedDict
 from enum import Enum
 
 import aiohttp
@@ -26,10 +26,12 @@ import base64
 if TYPE_CHECKING:
     from hybrid.sniper_bot import TokenInfo
 
-# EVM imports (optional)
+# EVM imports (optional). web3 >= 7: geth_poa_middleware became ExtraDataToPOAMiddleware
 try:
     from web3 import Web3
-    from web3.middleware import geth_poa_middleware
+    from web3.middleware import ExtraDataToPOAMiddleware
+    from web3.types import TxParams, Wei
+    from eth_typing import ChecksumAddress
     from eth_account import Account
     EVM_AVAILABLE = True
 except ImportError:
@@ -103,6 +105,11 @@ class DexExecutor(ABC):
         self.session = aiohttp.ClientSession()
         return self
     
+    def _http(self) -> aiohttp.ClientSession:
+        if not self.session:
+            raise RuntimeError("Session not initialized. Use async context manager.")
+        return self.session
+    
     async def __aexit__(self, *args):
         if self.session:
             await self.session.close()
@@ -127,13 +134,13 @@ class JupiterExecutor(DexExecutor):
     
     def __init__(
         self,
-        rpc_url: str = None,
-        private_key: str = None,
+        rpc_url: Optional[str] = None,
+        private_key: Optional[str] = None,
         priority_fee_lamports: int = 100_000,  # 0.0001 SOL
         compute_unit_limit: int = 200_000,
         compute_unit_price: int = 10_000  # micro-lamports
     ):
-        rpc_url = rpc_url or os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
+        rpc_url = rpc_url or os.getenv("SOLANA_RPC_URL") or "https://api.mainnet-beta.solana.com"
         private_key = private_key or os.getenv("SOLANA_PRIVATE_KEY")
         
         if not private_key:
@@ -168,7 +175,7 @@ class JupiterExecutor(DexExecutor):
             "platformFeeBps": "0"
         }
         
-        async with self.session.get(JUPITER_QUOTE_API, params=params) as resp:
+        async with self._http().get(JUPITER_QUOTE_API, params=params) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise Exception(f"Jupiter quote failed: {resp.status} - {text}")
@@ -207,7 +214,7 @@ class JupiterExecutor(DexExecutor):
             "useTokenLedger": False
         }
         
-        async with self.session.post(JUPITER_SWAP_API, json=swap_request) as resp:
+        async with self._http().post(JUPITER_SWAP_API, json=swap_request) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise Exception(f"Jupiter swap failed: {resp.status} - {text}")
@@ -221,10 +228,7 @@ class JupiterExecutor(DexExecutor):
         # Sign
         message_bytes = to_bytes_versioned(versioned_tx.message)
         signature = self.keypair.sign_message(message_bytes)
-        signed_tx = VersionedTransaction(
-            versioned_tx.message,
-            [signature]
-        )
+        signed_tx = VersionedTransaction.populate(versioned_tx.message, [signature])
         
         # Send transaction
         signed_b64 = base64.b64encode(bytes(signed_tx)).decode()
@@ -244,7 +248,7 @@ class JupiterExecutor(DexExecutor):
             ]
         }
         
-        async with self.session.post(self.rpc_url, json=rpc_payload) as resp:
+        async with self._http().post(self.rpc_url, json=rpc_payload) as resp:
             result = await resp.json()
         
         if "error" in result:
@@ -282,7 +286,7 @@ class JupiterExecutor(DexExecutor):
                 "method": "getSignatureStatuses",
                 "params": [[signature], {"searchTransactionHistory": True}]
             }
-            async with self.session.post(self.rpc_url, json=payload) as resp:
+            async with self._http().post(self.rpc_url, json=payload) as resp:
                 result = await resp.json()
             
             if result.get("result", {}).get("value", [None])[0]:
@@ -301,7 +305,7 @@ class JupiterExecutor(DexExecutor):
         if mint in self._token_cache:
             return self._token_cache[mint]
         
-        async with self.session.get(JUPITER_TOKENS_API) as resp:
+        async with self._http().get(JUPITER_TOKENS_API) as resp:
             tokens = await resp.json()
         
         for token in tokens:
@@ -319,7 +323,7 @@ class JupiterExecutor(DexExecutor):
             "method": "getBalance",
             "params": [str(self.pubkey)]
         }
-        async with self.session.post(self.rpc_url, json=payload) as resp:
+        async with self._http().post(self.rpc_url, json=payload) as resp:
             result = await resp.json()
         return result["result"]["value"]
     
@@ -335,7 +339,7 @@ class JupiterExecutor(DexExecutor):
                 {"encoding": "jsonParsed"}
             ]
         }
-        async with self.session.post(self.rpc_url, json=payload) as resp:
+        async with self._http().post(self.rpc_url, json=payload) as resp:
             result = await resp.json()
         
         accounts = result.get("result", {}).get("value", [])
@@ -389,11 +393,21 @@ ERC20_ABI = json.loads("""[
 ]""")
 
 
+class ChainConfig(TypedDict):
+    rpc: str
+    quoter: str
+    router: str
+    chain_id: int
+    native: str
+    wrapped_native: str
+    usdc: str
+
+
 class UniswapV3Executor(DexExecutor):
     """Uniswap V3 on EVM chains (Ethereum, Base, Arbitrum, Polygon, BSC)"""
     
     # Chain configs
-    CHAIN_CONFIG = {
+    CHAIN_CONFIG: Dict[Chain, "ChainConfig"] = {
         Chain.ETHEREUM: {
             "rpc": "https://eth.llamarpc.com",
             "quoter": "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6",
@@ -401,7 +415,7 @@ class UniswapV3Executor(DexExecutor):
             "chain_id": 1,
             "native": "ETH",
             "wrapped_native": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-            "usdc": "0xA0b86a33E6441b8c4C8C8C8C8C8C8C8C8C8C8C8C8"  # placeholder
+            "usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
         },
         Chain.BASE: {
             "rpc": "https://mainnet.base.org",
@@ -429,8 +443,8 @@ class UniswapV3Executor(DexExecutor):
     def __init__(
         self,
         chain: Chain = Chain.BASE,
-        rpc_url: str = None,
-        private_key: str = None,
+        rpc_url: Optional[str] = None,
+        private_key: Optional[str] = None,
         gas_multiplier: float = 1.2
     ):
         if not EVM_AVAILABLE:
@@ -454,7 +468,7 @@ class UniswapV3Executor(DexExecutor):
         # Setup web3
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
         if chain in [Chain.BSC, Chain.POLYGON]:
-            self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+            self.w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
         
         self.account = Account.from_key(private_key)
         self.address = self.account.address
@@ -472,7 +486,16 @@ class UniswapV3Executor(DexExecutor):
         # Wrapped native token
         self.wrapped_native = Web3.to_checksum_address(config["wrapped_native"])
     
-    def _resolve_token(self, token: str) -> str:
+    def _tx_params(self, gas: int) -> "TxParams":
+        return {
+            "from": self.address,
+            "gas": gas,
+            "gasPrice": Wei(int(self.w3.eth.gas_price * self.gas_multiplier)),
+            "nonce": self.w3.eth.get_transaction_count(self.address),
+            "chainId": self.config["chain_id"],
+        }
+    
+    def _resolve_token(self, token: str) -> "ChecksumAddress":
         """Resolve token symbol to address"""
         # Check if already address
         if token.startswith("0x") and len(token) == 42:
@@ -486,7 +509,7 @@ class UniswapV3Executor(DexExecutor):
                 "DAI": "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
             },
             Chain.ETHEREUM: {
-                "USDC": "0xA0b86a33E6441b8c4C8C8C8C8C8C8C8C8C8C8C8C8",
+                "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
                 "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
                 "USDT": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
                 "DAI": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
@@ -563,21 +586,15 @@ class UniswapV3Executor(DexExecutor):
             "amountIn": quote.input_amount,
             "amountOutMinimum": min_out,
             "sqrtPriceLimitX96": 0
-        }).build_transaction({
-            "from": self.address,
-            "gas": 300_000,
-            "gasPrice": int(self.w3.eth.gas_price * self.gas_multiplier),
-            "nonce": self.w3.eth.get_transaction_count(self.address),
-            "chainId": self.config["chain_id"]
-        })
+        }).build_transaction(self._tx_params(gas=300_000))
         
         # Add value if buying with native
         if token_in == self.wrapped_native:
-            tx["value"] = quote.input_amount
+            tx["value"] = Wei(quote.input_amount)
         
         # Sign and send
         signed = self.account.sign_transaction(tx)
-        tx_hash = self.w3.eth.send_raw_transaction(signed.rawTransaction)
+        tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
         tx_hash_hex = tx_hash.hex()
         
         # Wait for receipt
@@ -585,9 +602,9 @@ class UniswapV3Executor(DexExecutor):
             None, lambda: self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
         )
         
-        success = receipt.status == 1
-        gas_used = receipt.gasUsed
-        gas_price = receipt.effectiveGasPrice
+        success = receipt["status"] == 1
+        gas_used = receipt["gasUsed"]
+        gas_price = receipt["effectiveGasPrice"]
         
         return SwapResult(
             success=success,
@@ -612,16 +629,10 @@ class UniswapV3Executor(DexExecutor):
             return
         
         # Approve
-        tx = token_contract.functions.approve(spender, amount).build_transaction({
-            "from": self.address,
-            "gas": 100_000,
-            "gasPrice": int(self.w3.eth.gas_price * self.gas_multiplier),
-            "nonce": self.w3.eth.get_transaction_count(self.address),
-            "chainId": self.config["chain_id"]
-        })
+        tx = token_contract.functions.approve(spender, amount).build_transaction(self._tx_params(gas=100_000))
         
         signed = self.account.sign_transaction(tx)
-        tx_hash = self.w3.eth.send_raw_transaction(signed.rawTransaction)
+        tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
         await asyncio.get_event_loop().run_in_executor(
             None, lambda: self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
         )
@@ -678,7 +689,7 @@ class MultiChainExecutor:
     Handles token discovery, routing, and execution.
     """
     
-    def __init__(self, config: Dict[Chain, Dict] = None):
+    def __init__(self, config: Optional[Dict[Chain, Dict]] = None):
         self.config = config or {}
         self.executors: Dict[Chain, DexExecutor] = {}
     

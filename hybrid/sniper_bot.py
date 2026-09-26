@@ -7,7 +7,7 @@ Monitors DEXs for new token launches and executes via Jupiter/Uniswap.
 import asyncio
 import aiohttp
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 from dataclasses import dataclass
 
 from hybrid.agent_base import BaseAgent
@@ -41,7 +41,7 @@ class DexScreenerClient:
         self.min_liquidity = min_liquidity
         self.max_age_minutes = max_age_minutes
         self.session: Optional[aiohttp.ClientSession] = None
-        self.seen_pairs = set()
+        self.seen_pairs: set[str] = set()
     
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -57,7 +57,7 @@ class DexScreenerClient:
         
         url = f"{self.BASE_URL}/pairs/{chain}"
         try:
-            async with self.session.get(url, timeout=10) as resp:
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status != 200:
                     return []
                 data = await resp.json()
@@ -119,7 +119,7 @@ class SniperBot(BaseAgent):
         self,
         bus: MessageBus,
         config: HybridConfig,
-        chains: list[str] = None,
+        chains: Optional[list[str]] = None,
         min_liquidity: float = 10_000,
         max_position_usd: float = 500,
         slippage_bps: int = 300,
@@ -294,7 +294,7 @@ class SniperBot(BaseAgent):
             print(f"  ⏭️ Skip: Unsupported chain")
             return
         
-        if chain_enum not in self.executor.executors:
+        if self.executor is None or self.sniper_engine is None or chain_enum not in self.executor.executors:
             print(f"  ⏭️ Skip: No executor for {token.chain}")
             return
         
@@ -346,7 +346,7 @@ class SniperBot(BaseAgent):
     async def _emit_sniper_alert(self, token: TokenInfo, event: str, result=None):
         """Emit sniper alert to dashboard"""
         try:
-            alert_data = {
+            alert_data: Dict[str, Any] = {
                 "type": "sniper_alert",
                 "data": {
                     "chain": token.chain,
