@@ -25,7 +25,7 @@ class LLMAnalysisRequest:
     ticker: str
     trade_date: str
     asset_type: str = "stock"
-    selected_analysts: List[str] = None
+    selected_analysts: Optional[List[str]] = None
     max_debate_rounds: int = 1
     max_risk_rounds: int = 1
 
@@ -56,7 +56,7 @@ class LLMAnalystAgent(BaseAgent):
         self.semaphore = asyncio.Semaphore(max_concurrent)
         
         self._ta_graph = None
-        self._ta_config = None
+        self._ta_config: Optional[Dict] = None
         self.active_analyses: Dict[str, asyncio.Task] = {}
         self._pending_futures: Dict[str, asyncio.Future] = {}
         
@@ -210,7 +210,7 @@ class LLMAnalystAgent(BaseAgent):
             }
         }, self.name)
     
-    async def analyze(self, ticker: str, trade_date: str = None, asset_type: str = "stock") -> LLMAnalysisResult:
+    async def analyze(self, ticker: str, trade_date: Optional[str] = None, asset_type: str = "stock") -> LLMAnalysisResult:
         request_id = f"{ticker}_{trade_date or datetime.utcnow().strftime('%Y%m%d')}"
         
         future = asyncio.get_event_loop().create_future()
@@ -288,13 +288,11 @@ class LLMOrchestratorAgent(BaseAgent):
             "data": {
                 "trade_date": trade_date,
                 "results": [
-                    {
-                        "ticker": r.ticker if hasattr(r, 'ticker') else str(e),
-                        "success": r.success if hasattr(r, 'success') else False,
-                        "error": r.error if hasattr(r, 'error') else str(e),
-                        "llm_signals": {k: v for k, v in r.llm_signals.__dict__.items()} if hasattr(r, 'llm_signals') else None
-                    }
-                    for r, e in [(res, None) if not isinstance(res, Exception) else (None, res) for res in results]
+                    {"ticker": str(r), "success": False, "error": str(r), "llm_signals": None}
+                    if isinstance(r, BaseException) else
+                    {"ticker": r.ticker, "success": r.success, "error": r.error,
+                     "llm_signals": dict(r.llm_signals.__dict__) if r.llm_signals else None}
+                    for r in results
                 ]
             }
         }, self.name)

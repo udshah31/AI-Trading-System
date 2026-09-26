@@ -50,29 +50,34 @@ class QuantAgent(BaseAgent):
         # yfinance download + indicator math is blocking; keep the event loop free
         result = await asyncio.to_thread(self.pipeline.analyze_quant_only, market_data_symbol(ticker))
         
+        decision, tech = result.quant_decision, result.tech_signals
+        if decision is None or tech is None:  # analyze() always sets both; guard for the type checker
+            print(f"[QuantAgent] No decision for {ticker}")
+            return
+        
         self.bus.publish(Channel.SIGNALS, {
             "type": "quant_decision",
             "source": "quant_agent",
             "data": {
                 "ticker": ticker,
-                "action": result.quant_decision.action,
-                "score": result.quant_decision.composite_score,
-                "confidence": result.quant_decision.confidence,
+                "action": decision.action,
+                "score": decision.composite_score,
+                "confidence": decision.confidence,
                 "tech_signals": {
-                    "rsi": result.tech_signals.rsi,
-                    "rsi_score": result.tech_signals.rsi_score,
-                    "ema_fast": result.tech_signals.ema_fast,
-                    "ema_slow": result.tech_signals.ema_slow,
-                    "ema_crossover_score": result.tech_signals.ema_crossover_score,
-                    "bollinger_upper": result.tech_signals.bollinger_upper,
-                    "bollinger_lower": result.tech_signals.bollinger_lower,
-                    "bollinger_mid": result.tech_signals.bollinger_mid,
-                    "bollinger_score": result.tech_signals.bollinger_score,
-                    "atr": result.tech_signals.atr,
-                    "current_price": result.tech_signals.current_price,
-                    "volume": result.tech_signals.current_volume,
-                    "volume_sma": result.tech_signals.volume_sma_20,
-                    "volume_score": result.tech_signals.volume_score,
+                    "rsi": tech.rsi,
+                    "rsi_score": tech.rsi_score,
+                    "ema_fast": tech.ema_fast,
+                    "ema_slow": tech.ema_slow,
+                    "ema_crossover_score": tech.ema_crossover_score,
+                    "bollinger_upper": tech.bollinger_upper,
+                    "bollinger_lower": tech.bollinger_lower,
+                    "bollinger_mid": tech.bollinger_mid,
+                    "bollinger_score": tech.bollinger_score,
+                    "atr": tech.atr,
+                    "current_price": tech.current_price,
+                    "volume": tech.current_volume,
+                    "volume_sma": tech.volume_sma_20,
+                    "volume_score": tech.volume_score,
                 }
             }
         }, "quant_agent")

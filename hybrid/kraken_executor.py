@@ -187,7 +187,7 @@ class KrakenRestClient:
                 await asyncio.sleep(1.0 / self.config.rest_rate_limit - elapsed)
             self._last_request = time.time()
     
-    async def _request(self, method: str, endpoint: str, params: Dict = None, 
+    async def _request(self, method: str, endpoint: str, params: Optional[Dict] = None, 
                        auth: bool = False, futures: bool = False) -> Dict:
         await self._rate_limit()
         
@@ -230,7 +230,7 @@ class KrakenRestClient:
         pair_str = ",".join(pairs)
         return await self._request("GET", "/0/public/Ticker", {"pair": pair_str})
     
-    async def get_ohlc(self, pair: str, interval: int = 1, since: int = None) -> Dict:
+    async def get_ohlc(self, pair: str, interval: int = 1, since: Optional[int] = None) -> Dict:
         params = {"pair": pair, "interval": interval}
         if since:
             params["since"] = since
@@ -239,8 +239,8 @@ class KrakenRestClient:
     async def get_order_book(self, pair: str, count: int = 100) -> Dict:
         return await self._request("GET", "/0/public/Depth", {"pair": pair, "count": count})
     
-    async def get_recent_trades(self, pair: str, since: int = None) -> Dict:
-        params = {"pair": pair}
+    async def get_recent_trades(self, pair: str, since: Optional[int] = None) -> Dict:
+        params: Dict[str, Any] = {"pair": pair}
         if since:
             params["since"] = since
         return await self._request("GET", "/0/public/Trades", params)
@@ -262,11 +262,11 @@ class KrakenRestClient:
         return await self._request("POST", "/0/private/TradeBalance", 
                                    {"asset": asset}, auth=True)
     
-    async def get_open_orders(self, userref: int = None) -> Dict:
+    async def get_open_orders(self, userref: Optional[int] = None) -> Dict:
         params = {"userref": userref} if userref is not None else {}
         return await self._request("POST", "/0/private/OpenOrders", params, auth=True)
     
-    async def get_closed_orders(self, start: int = None, end: int = None, userref: int = None) -> Dict:
+    async def get_closed_orders(self, start: Optional[int] = None, end: Optional[int] = None, userref: Optional[int] = None) -> Dict:
         params = {}
         if userref is not None:
             params["userref"] = userref
@@ -280,7 +280,7 @@ class KrakenRestClient:
         return await self._request("POST", "/0/private/QueryOrders", 
                                    {"txid": ",".join(txids)}, auth=True)
     
-    async def get_trades_history(self, start: int = None, end: int = None) -> Dict:
+    async def get_trades_history(self, start: Optional[int] = None, end: Optional[int] = None) -> Dict:
         params = {}
         if start:
             params["start"] = start
@@ -296,7 +296,7 @@ class KrakenRestClient:
         return await self._request("POST", "/derivatives/api/v3/openpositions", {},
                                    auth=True, futures=True)
     
-    async def get_futures_fills(self, last_time: str = None) -> Dict:
+    async def get_futures_fills(self, last_time: Optional[str] = None) -> Dict:
         params = {}
         if last_time:
             params["lastTime"] = last_time
@@ -349,7 +349,7 @@ class KrakenRestClient:
         """Place a futures order"""
         symbol = self._normalize_futures_symbol(order.symbol)
         
-        body = {
+        body: Dict[str, Any] = {
             "orderType": "mkt" if order.order_type == "market" else "lmt",
             "symbol": symbol,
             "side": order.side.capitalize(),
@@ -440,7 +440,7 @@ class KrakenWebSocket:
     
     def __init__(self, config: KrakenConfig):
         self.config = config
-        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.ws: Optional[Any] = None  # connection from websockets.connect()
         self.subscriptions: Dict[str, Dict] = {}
         self.callbacks: Dict[str, List[Callable]] = {}
         self.running = False
@@ -508,6 +508,8 @@ class KrakenWebSocket:
         if sub.get("auth") and self.config.api_key:
             # Add auth for private channels
             msg["token"] = await self._get_ws_token()
+        if self.ws is None:
+            raise RuntimeError("Kraken WebSocket is not connected")
         await self.ws.send(json.dumps(msg))
     
     async def _get_ws_token(self) -> str:
@@ -560,10 +562,15 @@ class KrakenExecutor:
         self._tickers: Dict[str, Ticker] = {}
         self._open_orders: Dict[str, OrderResult] = {}
     
+    def _client(self) -> "KrakenRestClient":
+        if self.rest is None:
+            raise RuntimeError("KrakenExecutor not initialized; call initialize() first")
+        return self.rest
+    
     async def initialize(self):
         """Initialize REST client, load symbols, start WebSocket"""
         self.rest = KrakenRestClient(self.config)
-        await self.rest.__aenter__()
+        await self._client().__aenter__()
         
         # Load symbol mappings
         await self._load_symbols()
@@ -599,7 +606,7 @@ class KrakenExecutor:
         if self.rest:
             try:
                 await asyncio.wait_for(
-                    self.rest.__aexit__(None, None, None), timeout=5.0
+                    self._client().__aexit__(None, None, None), timeout=5.0
                 )
             except Exception:
                 pass
@@ -607,11 +614,11 @@ class KrakenExecutor:
     async def _load_symbols(self):
         """Load and cache symbol mappings"""
         if self.config.environment == KrakenEnvironment.FUTURES:
-            result = await self.rest.get_futures_instruments()
+            result = await self._client().get_futures_instruments()
             for inst in result.get("instruments", []):
                 self._symbol_map[inst["symbol"]] = inst["symbol"]
         else:
-            result = await self.rest.get_asset_pairs()
+            result = await self._client().get_asset_pairs()
             for kraken_symbol, info in result.items():
                 # Map standard -> kraken
                 standard = info.get("altname", kraken_symbol).replace(".", "/")
@@ -654,7 +661,7 @@ class KrakenExecutor:
         
         # Fallback to REST
         kraken_symbol = self._to_kraken_symbol(symbol)
-        result = await self.rest.get_ticker([kraken_symbol])
+        result = await self._client().get_ticker([kraken_symbol])
         
         if kraken_symbol in result:
             d = result[kraken_symbol]
@@ -673,7 +680,7 @@ class KrakenExecutor:
     
     async def get_orderbook(self, symbol: str, depth: int = 20) -> Dict:
         kraken_symbol = self._to_kraken_symbol(symbol)
-        return await self.rest.get_order_book(kraken_symbol, depth)
+        return await self._client().get_order_book(kraken_symbol, depth)
     
     # ============ ACCOUNT ============
     
@@ -681,7 +688,7 @@ class KrakenExecutor:
         """Get all account balances (rebuilt each call, so assets no longer held drop out)"""
         balances: Dict[str, Balance] = {}
         if self.config.environment == KrakenEnvironment.FUTURES:
-            result = await self.rest.get_futures_account()
+            result = await self._client().get_futures_account()
             for asset, data in result.get("accounts", {}).items():
                 balances[asset] = Balance(
                     asset=asset,
@@ -690,7 +697,7 @@ class KrakenExecutor:
                     total=Decimal(data.get("balance", 0))
                 )
         else:
-            result = await self.rest.get_account_balance()
+            result = await self._client().get_account_balance()
             for asset, total in result.items():
                 standard = self._to_standard_symbol(asset)
                 balances[standard] = Balance(
@@ -713,9 +720,9 @@ class KrakenExecutor:
         if self.config.dry_run:
             return self._simulate_fill(order)
         if self.config.environment == KrakenEnvironment.FUTURES:
-            result = await self.rest.add_futures_order(order)
+            result = await self._client().add_futures_order(order)
         else:
-            result = await self.rest.add_order(order)
+            result = await self._client().add_order(order)
         
         if result.success and result.order_id:
             self._open_orders[result.order_id] = result
@@ -750,8 +757,8 @@ class KrakenExecutor:
         Filtered by Kraken (userref param) and again here, so the result is right even
         if the filter isn't applied server-side. Each item: status, side, vol_exec.
         """
-        open_ = (await self.rest.get_open_orders(userref=userref)).get("open", {})
-        closed = (await self.rest.get_closed_orders(userref=userref)).get("closed", {})
+        open_ = (await self._client().get_open_orders(userref=userref)).get("open", {})
+        closed = (await self._client().get_closed_orders(userref=userref)).get("closed", {})
         return [
             {"txid": txid, "status": info.get("status"), "side": info.get("descr", {}).get("type"),
              "vol_exec": float(info.get("vol_exec") or 0)}
@@ -764,7 +771,7 @@ class KrakenExecutor:
         if self.config.dry_run:
             return OrderResult(success=True, order_id=order_id, status="canceled",
                                raw_response={"dry_run": True})
-        result = await self.rest.cancel_order(
+        result = await self._client().cancel_order(
             order_id, 
             futures=self.config.environment == KrakenEnvironment.FUTURES
         )
@@ -777,7 +784,7 @@ class KrakenExecutor:
     async def cancel_all_orders(self) -> Dict:
         if self.config.dry_run:
             return {"count": 0, "dry_run": True}
-        return await self.rest.cancel_all_orders(
+        return await self._client().cancel_all_orders(
             futures=self.config.environment == KrakenEnvironment.FUTURES
         )
     
@@ -790,7 +797,7 @@ class KrakenExecutor:
             # Futures: query via open positions or fills
             pass
         else:
-            result = await self.rest.query_orders([order_id])
+            result = await self._client().query_orders([order_id])
             # Parse result...
         
         return None
@@ -844,14 +851,14 @@ class KrakenExecutor:
     async def get_futures_positions(self) -> List[Dict]:
         if self.config.environment != KrakenEnvironment.FUTURES:
             return []
-        result = await self.rest.get_futures_positions()
+        result = await self._client().get_futures_positions()
         return result.get("openPositions", [])
     
     async def set_leverage(self, symbol: str, leverage: int) -> Dict:
         if self.config.environment != KrakenEnvironment.FUTURES:
             raise Exception("Not futures environment")
-        futures_symbol = self._normalize_futures_symbol(symbol)
-        return await self.rest._request("POST", "/derivatives/api/v3/setleverage",
+        futures_symbol = self._client()._normalize_futures_symbol(symbol)
+        return await self._client()._request("POST", "/derivatives/api/v3/setleverage",
                                         {"symbol": futures_symbol, "leverage": leverage},
                                         auth=True, futures=True)
 
@@ -867,12 +874,12 @@ class KrakenExecutorFactory:
     
     @classmethod
     async def get_executor(cls, env: KrakenEnvironment = KrakenEnvironment.SPOT, 
-                           **kwargs) -> KrakenExecutor:
+                           **kwargs: str) -> KrakenExecutor:
         if env not in cls._instances:
             config = KrakenConfig(
-                api_key=kwargs.get("api_key") or os.getenv("KRAKEN_API_KEY"),
-                api_secret=kwargs.get("api_secret") or os.getenv("KRAKEN_API_SECRET"),
-                passphrase=kwargs.get("passphrase") or os.getenv("KRAKEN_PASSPHRASE", ""),
+                api_key=kwargs.get("api_key") or os.getenv("KRAKEN_API_KEY") or "",
+                api_secret=kwargs.get("api_secret") or os.getenv("KRAKEN_API_SECRET") or "",
+                passphrase=kwargs.get("passphrase") or os.getenv("KRAKEN_PASSPHRASE") or "",
                 environment=env
             )
             executor = KrakenExecutor(config)

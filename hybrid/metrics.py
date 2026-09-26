@@ -5,6 +5,7 @@ from prometheus_client import Counter, Histogram, Gauge, CollectorRegistry, gene
 from functools import wraps
 import time
 import asyncio
+from typing import Optional
 
 # Create custom registry
 registry = CollectorRegistry()
@@ -238,7 +239,7 @@ RL_LEARNING_RATE = Gauge(
 # HELPER FUNCTIONS
 # =============================================================================
 
-def track_latency(metric: Histogram, labels: dict = None):
+def track_latency(metric: Histogram, labels: Optional[dict] = None):
     """Decorator to track function latency"""
     def decorator(func):
         @wraps(func)

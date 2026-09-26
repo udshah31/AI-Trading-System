@@ -9,6 +9,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from pathlib import Path
 import json
+from typing import Optional
 
 
 class TradingEnv(gym.Env):
@@ -24,7 +25,7 @@ class TradingEnv(gym.Env):
     Reward: Risk-adjusted returns (Sharpe-like)
     """
     
-    def __init__(self, df: pd.DataFrame, llm_signals: dict = None, 
+    def __init__(self, df: pd.DataFrame, llm_signals: Optional[dict] = None, 
                  initial_capital: float = 100_000, transaction_cost: float = 0.001,
                  max_position: float = 1.0, risk_penalty: float = 0.1):
         super().__init__()
@@ -52,7 +53,7 @@ class TradingEnv(gym.Env):
         self.position = 0.0
         self.capital = initial_capital
         self.peak_capital = initial_capital
-        self.trades = []
+        self.trades: list[dict] = []
     
     def _default_llm_signals(self):
         return {col: 0.5 for col in [

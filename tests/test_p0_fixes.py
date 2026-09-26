@@ -91,8 +91,10 @@ def test_uniswap_deadline_is_unix_epoch():
     executor.w3 = MagicMock()
     executor.w3.eth.gas_price = 1
     executor.w3.eth.get_transaction_count.return_value = 0
-    executor.w3.eth.wait_for_transaction_receipt.return_value = SimpleNamespace(
-        status=1, gasUsed=1, effectiveGasPrice=1)
+    # web3 returns receipts as AttributeDict (TxReceipt): key and attribute access
+    from web3.datastructures import AttributeDict
+    executor.w3.eth.wait_for_transaction_receipt.return_value = AttributeDict(
+        {"status": 1, "gasUsed": 1, "effectiveGasPrice": 1})
 
     quote = QuoteResponse(input_amount=1000, output_amount=990, price_impact_pct=0.1,
                           route=[{"token_in": "WETH", "token_out": "TOKEN", "fee": 3000}],
@@ -101,3 +103,57 @@ def test_uniswap_deadline_is_unix_epoch():
 
     params = executor.router.functions.exactInputSingle.call_args.args[0]
     assert time.time() + 290 < params["deadline"] <= time.time() + 300
+
+
+def test_evm_executors_available_on_installed_web3():
+    # web3 >= 7 renamed geth_poa_middleware; the failed import silently disabled every EVM chain
+    from hybrid.dex_executor import EVM_AVAILABLE
+    assert EVM_AVAILABLE is True
+
+
+def test_jupiter_swap_sends_a_validly_signed_transaction():
+    import base64
+    from solders.hash import Hash
+    from solders.keypair import Keypair
+    from solders.message import MessageV0
+    from solders.system_program import TransferParams, transfer
+    from solders.transaction import VersionedTransaction
+    from hybrid.dex_executor import JupiterExecutor, QuoteResponse
+
+    owner = Keypair()
+    executor = JupiterExecutor(private_key=str(owner))
+    message = MessageV0.try_compile(owner.pubkey(), [transfer(TransferParams(
+        from_pubkey=owner.pubkey(), to_pubkey=Keypair().pubkey(), lamports=1))], [], Hash.default())
+    unsigned = VersionedTransaction.populate(message, [])  # what Jupiter's swap API returns
+    sent = []
+
+    class Response:
+        status = 200
+
+        def __init__(self, body):
+            self.body = body
+
+        async def json(self):
+            return self.body
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            pass
+
+    def post(url, json):
+        if "swap" in url:
+            return Response({"swapTransaction": base64.b64encode(bytes(unsigned)).decode()})
+        if json["method"] == "sendTransaction":
+            sent.append(VersionedTransaction.from_bytes(base64.b64decode(json["params"][0])))
+            return Response({"result": "sig"})
+        return Response({"result": {"value": [{"confirmationStatus": "confirmed", "err": None}]}})
+
+    executor.session = SimpleNamespace(post=post)
+    quote = QuoteResponse(input_amount=1, output_amount=1, price_impact_pct=0.0, route=[], dex=None)
+    result = asyncio.run(executor.execute_swap(quote))
+
+    assert result.success, result.error
+    [tx] = sent
+    assert tx.verify_with_results() == [True]  # signed by the owner's key

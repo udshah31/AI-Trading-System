@@ -9,6 +9,7 @@ from hybrid.quant_engine import QuantDecision
 from hybrid.technical_indicators import TechnicalSignals
 from hybrid.storage import StorageService
 import asyncio
+from typing import Optional
 
 
 class RiskAgent(BaseAgent):
@@ -16,8 +17,8 @@ class RiskAgent(BaseAgent):
         super().__init__("risk_agent", bus)
         self.config = config
         self.risk_manager = RiskManager(config)
-        self.storage: StorageService = None
-        self._monitor_task: asyncio.Task = None
+        self.storage: Optional[StorageService] = None
+        self._monitor_task: Optional[asyncio.Task] = None
         self.bus.subscribe(Channel.SIGNALS, self._on_quant_decision)
     
     async def start(self):

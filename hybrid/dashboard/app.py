@@ -74,6 +74,19 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://trader:secret@loc
 storage: Optional[StorageService] = None
 redis_client: Optional[redis.Redis] = None
 
+
+def _db() -> StorageService:
+    """The storage service; set by lifespan() before any request is served."""
+    if storage is None:
+        raise RuntimeError("Dashboard storage not initialized")
+    return storage
+
+
+def _redis() -> redis.Redis:
+    if redis_client is None:
+        raise RuntimeError("Dashboard Redis client not initialized")
+    return redis_client
+
 # WebSocket connections
 active_websockets: List[WebSocket] = []
 
@@ -343,7 +356,7 @@ async def metrics():
 @app.get("/api/overview", response_model=SystemOverview)
 async def get_overview():
     """Get complete system overview"""
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from sqlalchemy import select, func
         from hybrid.storage import Trade, Position, EquityCurve, Signal
         
@@ -468,7 +481,7 @@ async def get_trades(
     limit: int = Query(100, le=1000),
     days: int = Query(30, le=365)
 ):
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from sqlalchemy import select, and_
         from hybrid.storage import Trade
         
@@ -488,7 +501,7 @@ async def get_trades(
 
 @app.get("/api/trades/{trade_id}", response_model=TradeResponse)
 async def get_trade(trade_id: str):
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from hybrid.storage import Trade
         trade = await session.get(Trade, trade_id)
         if not trade:
@@ -499,7 +512,7 @@ async def get_trade(trade_id: str):
 # --- Positions ---
 @app.get("/api/positions", response_model=List[PositionResponse])
 async def get_positions(open_only: bool = True):
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from sqlalchemy import select
         from hybrid.storage import Position
         
@@ -514,7 +527,7 @@ async def get_positions(open_only: bool = True):
 
 @app.get("/api/positions/summary")
 async def get_positions_summary():
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from sqlalchemy import select, func
         from hybrid.storage import Position
         
@@ -554,7 +567,7 @@ async def get_positions_summary():
 # Must precede /api/equity/{account}, which would otherwise capture "history".
 @app.get("/api/equity/history")
 async def get_equity_history(days: int = Query(30, le=365), account: str = "default"):
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from sqlalchemy import select
         from hybrid.storage import EquityCurve
         
@@ -574,7 +587,7 @@ async def get_equity_history(days: int = Query(30, le=365), account: str = "defa
 
 @app.get("/api/equity/{account}", response_model=List[EquityPoint])
 async def get_equity(account: str, days: int = Query(30, le=365)):
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from sqlalchemy import select
         from hybrid.storage import EquityCurve
         
@@ -595,7 +608,7 @@ async def get_signals(
     agent: Optional[str] = None,
     limit: int = Query(100, le=500)
 ):
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from sqlalchemy import select, and_
         from hybrid.storage import Signal
         
@@ -647,7 +660,7 @@ async def get_agents():
 @app.get("/api/metrics/summary", response_model=SystemMetrics)
 async def get_metrics_summary():
     """Get system-wide metrics"""
-    async with storage.db.session() as session:
+    async with _db().db.session() as session:
         from sqlalchemy import select, func
         from hybrid.storage import Trade, Position, EquityCurve
         
@@ -698,7 +711,7 @@ async def get_metrics_summary():
 @app.get("/api/realtime/{channel}")
 async def get_realtime(channel: str):
     """Get latest data from Redis channel"""
-    data = await redis_client.hgetall(f"dashboard:{channel}")
+    data = await _redis().hgetall(f"dashboard:{channel}")
     return JSONResponse(content=data)
 
 
@@ -728,7 +741,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         # Send initial data
-        async with storage.db.session() as session:
+        async with _db().db.session() as session:
             from sqlalchemy import select
             from hybrid.storage import Position, EquityCurve
             
@@ -777,7 +790,7 @@ async def update_redis_cache():
                 await asyncio.sleep(5)
                 continue
             
-            async with storage.db.session() as session:
+            async with _db().db.session() as session:
                 from sqlalchemy import select, func
                 from hybrid.storage import Position, EquityCurve, Trade
                 
@@ -884,7 +897,7 @@ async def get_risk_metrics():
     if not storage:
         return {"error": "Storage not available"}
     try:
-        async with storage.db.session() as session:
+        async with _db().db.session() as session:
             from sqlalchemy import select, func
             from hybrid.storage import Trade, Position, EquityCurve
             
@@ -1005,7 +1018,7 @@ async def get_backtest_results(strategy_id: str, days: int = Query(30, le=365)):
     if not storage:
         return {"error": "Storage not available"}
     try:
-        async with storage.db.session() as session:
+        async with _db().db.session() as session:
             from sqlalchemy import select, and_
             from hybrid.storage import Trade, EquityCurve
             
@@ -1023,18 +1036,18 @@ async def get_backtest_results(strategy_id: str, days: int = Query(30, le=365)):
             equity_points = []
             running_equity = 100000.0  # Starting capital
             for trade in trades:
-                running_equity += float(trade.pnl)
+                running_equity += float(trade.pnl or 0)
                 equity_points.append({
                     "timestamp": trade.timestamp.isoformat(),
                     "equity": running_equity,
-                    "trade_pnl": float(trade.pnl)
+                    "trade_pnl": float(trade.pnl or 0)
                 })
             
             return {
                 "strategy_id": strategy_id,
                 "days": days,
                 "total_trades": len(trades),
-                "total_pnl": sum(float(t.pnl) for t in trades),
+                "total_pnl": sum(float(t.pnl or 0) for t in trades),
                 "equity_curve": equity_points,
                 "trades": [
                     {
@@ -1043,7 +1056,7 @@ async def get_backtest_results(strategy_id: str, days: int = Query(30, le=365)):
                         "side": t.side,
                         "volume": float(t.volume),
                         "price": float(t.price),
-                        "pnl": float(t.pnl)
+                        "pnl": float(t.pnl or 0)
                     } for t in trades
                 ]
             }
