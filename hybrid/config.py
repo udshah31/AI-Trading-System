@@ -12,8 +12,21 @@ from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
-# Load .env file from TradingAgents directory
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "TradingAgents", ".env"))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+LEARNED_WEIGHTS_PATH = Path(__file__).parent / "learned_weights.json"
+
+
+def load_env_files(root: Path = PROJECT_ROOT) -> None:
+    """Load <root>/.env, then <root>/TradingAgents/.env for anything still unset.
+
+    Variables already in the real environment always win (override=False).
+    """
+    load_dotenv(root / ".env", override=False)
+    load_dotenv(root / "TradingAgents" / ".env", override=False)
+
+
+# Before anything imports tradingagents: its DEFAULT_CONFIG reads TRADINGAGENTS_* at import.
+load_env_files()
 
 
 def live_trading_enabled() -> bool:
@@ -76,33 +89,20 @@ class HybridConfig:
         self._load_learned_weights()
 
     def _load_tradingagents_config(self):
-        """Load TradingAgents config from default_config.py and .env"""
-        # Load from TradingAgents default_config.py
+        """Explicit settings (e.g. CLI flags) on top of TradingAgents' defaults.
+
+        DEFAULT_CONFIG already has the TRADINGAGENTS_* env vars applied and
+        type-coerced by TradingAgents itself, so they aren't re-read here.
+        """
         try:
             from tradingagents.default_config import DEFAULT_CONFIG
-            self.tradingagents_config = {**DEFAULT_CONFIG, **self.tradingagents_config}
         except ImportError:
-            pass
-
-        # Override with environment variables
-        env_overrides = {
-            "llm_provider": "TRADINGAGENTS_LLM_PROVIDER",
-            "deep_think_llm": "TRADINGAGENTS_DEEP_THINK_LLM",
-            "quick_think_llm": "TRADINGAGENTS_QUICK_THINK_LLM",
-            "max_debate_rounds": "TRADINGAGENTS_MAX_DEBATE_ROUNDS",
-            "max_risk_discuss_rounds": "TRADINGAGENTS_MAX_RISK_ROUNDS",
-        }
-        # Explicitly load GOOGLE_API_KEY from .env
-        load_dotenv(os.path.join(os.path.dirname(__file__), "..", "TradingAgents", ".env"))
-
-        for key, env_var in env_overrides.items():
-            env_val = os.getenv(env_var)
-            if env_val:
-                self.tradingagents_config[key] = env_val
+            return
+        self.tradingagents_config = {**DEFAULT_CONFIG, **self.tradingagents_config}
 
     def _load_learned_weights(self):
         """Loads machine learning optimized weights if they exist."""
-        weights_file = Path(__file__).parent / "learned_weights.json"
+        weights_file = LEARNED_WEIGHTS_PATH
         if not weights_file.exists():
             return
         try:

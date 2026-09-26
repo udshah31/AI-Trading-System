@@ -18,8 +18,6 @@ from hybrid.messaging import MessageBus, Channel
 from hybrid.config import HybridConfig
 from hybrid.signal_extractor import extract_signals, LLMSignals
 
-from dotenv import load_dotenv
-load_dotenv(TA_ROOT / ".env", override=False)
 
 
 @dataclass

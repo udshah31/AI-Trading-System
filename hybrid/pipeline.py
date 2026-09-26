@@ -24,10 +24,6 @@ from typing import Optional
 _ta_root = Path(__file__).parent.parent / "TradingAgents"
 sys.path.insert(0, str(_ta_root))
 
-# Explicitly load the .env from TradingAgents directory so API keys
-# are available regardless of which directory we run from.
-from dotenv import load_dotenv
-load_dotenv(_ta_root / ".env", override=False)
 
 from hybrid.config import HybridConfig
 from hybrid.execution import AlpacaExecutor, ExecutionResult
