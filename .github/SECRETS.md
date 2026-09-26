@@ -19,6 +19,7 @@
 
 | Secret Name | Description |
 |-------------|-------------|
+| `DASHBOARD_PASSWORD` | Basic-auth password for the dashboard (user `admin`). Without it the container refuses to start. |
 | `DATABASE_URL` | PostgreSQL connection string (e.g., `postgresql+asyncpg://user:pass@host:5432/db`) |
 | `REDIS_URL` | Redis connection string (e.g., `redis://:pass@host:6379/0`) |
 | `KRAKEN_API_KEY` | Kraken Pro API key |

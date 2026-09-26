@@ -18,6 +18,10 @@ scrape_configs:
     static_configs:
       - targets: ['host.docker.internal:8000']
     metrics_path: '/metrics'
+    # must match DASHBOARD_USER; password comes from the compose secret
+    basic_auth:
+      username: 'admin'
+      password_file: /run/secrets/dashboard_password
 
   # Redis exporter (if running)
   - job_name: 'redis'

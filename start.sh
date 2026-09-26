@@ -24,7 +24,7 @@ fi
 source .env
 
 # Check required variables
-REQUIRED_VARS=("KRAKEN_API_KEY" "KRAKEN_API_SECRET" "GOOGLE_API_KEY")
+REQUIRED_VARS=("KRAKEN_API_KEY" "KRAKEN_API_SECRET" "GOOGLE_API_KEY" "DASHBOARD_PASSWORD")
 MISSING=()
 
 for var in "${REQUIRED_VARS[@]}"; do
@@ -87,7 +87,7 @@ echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}  System Started Successfully!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "📊 Dashboard:    http://localhost:8000"
+echo "📊 Dashboard:    http://localhost:8000 (user: ${DASHBOARD_USER:-admin}, password from .env)"
 echo "📈 Prometheus:   http://localhost:9090"
 echo "📉 Grafana:      http://localhost:3000 (admin/admin)"
 echo ""
