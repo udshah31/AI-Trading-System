@@ -70,6 +70,19 @@ class Portfolio:
         self._raise_peak()
         return realised
 
+    def set_volume(self, ticker: str, volume: float) -> None:
+        """Correct a position's size to what the broker actually holds, keeping its cost:
+        a fee taken in the coin raises the average entry instead of vanishing."""
+        pos = self.positions.get(ticker)
+        if not pos:
+            return
+        if volume <= 1e-12:
+            del self.positions[ticker]
+            return
+        if pos["avg_price"] is not None and pos["volume"] > 0:
+            pos["avg_price"] = pos["avg_price"] * pos["volume"] / volume
+        pos["volume"] = volume
+
     def mark(self, ticker: str, price: float) -> None:
         """Value an open position at a live price."""
         pos = self.positions.get(ticker)

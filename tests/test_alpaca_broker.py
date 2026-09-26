@@ -211,3 +211,65 @@ def test_build_broker_from_env(monkeypatch):
     broker = build_broker()
     assert isinstance(broker, AlpacaBroker) and broker.name == "alpaca_paper"
     assert OrderReport  # interface exported
+
+
+# ── fees taken in the coin, and dust ──
+
+def _fill_last(orch, bus, client, held_after, price=84000.0, filled=None):
+    """Fill the last order; the paper account then holds `held_after` BTC."""
+    order = bus.of_type("execute_order")[-1]
+    client.positions.pop("BTCUSD", None)
+    if held_after > 0:
+        client.positions["BTCUSD"] = str(held_after)
+    _result(orch, bus, success=True, status="filled", filled_volume=filled or order["volume"], avg_price=price)
+    return order
+
+
+def _approve_sell(orch):
+    run(orch._on_signal({"type": "risk_assessment", "data": {
+        "ticker": "BTC/USDT", "action": "SELL", "approved": True, "shares": 0.0005,
+        "price": 84000.0, "stop_loss": 0, "rejection_reason": ""}}))
+
+
+def test_buy_holds_what_alpaca_credited_after_the_fee():
+    client = FakeAlpaca()
+    bus, orch = _orch_with(_broker(client))
+    _approve_buy(orch, shares=0.0005)
+    _fill_last(orch, bus, client, held_after=0.000498748)  # Alpaca took its fee in BTC
+    assert orch.holdings["BTC/USDT"] == pytest.approx(0.000498748)
+    pos = orch.portfolio.positions["BTC/USDT"]
+    assert pos["volume"] == pytest.approx(0.000498748)
+    assert pos["volume"] * pos["avg_price"] == pytest.approx(0.0005 * 84000.0)  # fee in the cost basis
+
+
+def test_selling_everything_leaves_no_position_to_block_the_next_buy():
+    client = FakeAlpaca()
+    bus, orch = _orch_with(_broker(client))
+    _approve_buy(orch, shares=0.0005)
+    _fill_last(orch, bus, client, held_after=0.000498748)
+    _approve_sell(orch)
+    sell = _fill_last(orch, bus, client, held_after=0)
+    assert (sell["side"], sell["volume"]) == ("sell", pytest.approx(0.000498748))
+    assert orch.holdings == {} and orch.stops == {} and orch.portfolio.positions == {}
+    _approve_buy(orch, shares=0.0005)
+    assert bus.of_type("execute_order")[-1]["side"] == "buy"  # not skipped as "already long"
+
+
+def test_sub_minimum_leftover_after_a_sell_is_dropped():
+    client = FakeAlpaca(positions={"BTCUSD": "0.0005"})
+    bus, orch = _orch_with(_broker(FakeAlpaca()))
+    orch.broker = _broker(client)
+    orch.holdings["BTC/USDT"] = 0.0005  # booked before the fee sync existed
+    _approve_sell(orch)
+    _fill_last(orch, bus, client, held_after=0, filled=0.000498748)
+    assert orch.holdings == {}  # 1.25e-6 BTC ≈ $0.10 left: dust, not a position
+
+
+def test_partial_sell_above_the_minimum_keeps_the_rest():
+    client = FakeAlpaca()
+    bus, orch = _orch_with(_broker(client))
+    _approve_buy(orch, shares=0.05)
+    _fill_last(orch, bus, client, held_after=0.05)
+    _approve_sell(orch)
+    _fill_last(orch, bus, client, held_after=0.02, filled=0.03)
+    assert orch.holdings["BTC/USDT"] == pytest.approx(0.02)  # $1,680 left: a real position
