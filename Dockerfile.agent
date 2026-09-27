@@ -22,6 +22,8 @@ COPY hybrid/ ./hybrid/
 
 # Set Python path
 ENV PYTHONPATH=/app:/app/TradingAgents
+# No TTY in a container: without this, print() output sits in a buffer and never reaches docker logs
+ENV PYTHONUNBUFFERED=1
 
 # Default command (overridden by docker-compose)
 CMD ["python", "-m", "hybrid.main_async"]

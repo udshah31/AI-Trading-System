@@ -17,6 +17,8 @@ RUN pip install --no-cache-dir -e ./TradingAgents
 COPY hybrid/ ./hybrid/
 
 ENV PYTHONPATH=/app:/app/TradingAgents
+# No TTY in a container: without this, print() output sits in a buffer and never reaches docker logs
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
