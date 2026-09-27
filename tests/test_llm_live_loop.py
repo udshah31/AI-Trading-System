@@ -212,3 +212,54 @@ def test_placeholder_signals_are_not_stored():
     _, agent, _ = _quant_agent(Clock())
     run(agent._on_llm_result(_llm_result(signals=LLMSignals())))  # available=False
     assert agent.fresh_llm("BTC/USDT") == (None, None)
+
+
+# ── Task 4: agreement reaches the risk manager; the log says where a decision came from ──
+
+def _quant_decision(agreement, llm_age=None):
+    return {"type": "quant_decision", "source": "quant_agent",
+            "data": {"ticker": "BTC/USDT", "action": "BUY", "score": 0.8, "confidence": 1.0,
+                     "llm_component": 0.675 if llm_age is not None else None,
+                     "llm_age_hours": llm_age, "agreement": agreement,
+                     "tech_signals": {"current_price": 84000.0, "atr": 2400.0}}}
+
+
+def test_disagreement_halves_the_position_size():
+    from hybrid.risk_agent import RiskAgent
+
+    sizes = {}
+    for agreement in (True, False):
+        bus = RecordingBus()
+        run(RiskAgent(bus, HybridConfig())._on_quant_decision(_quant_decision(agreement, llm_age=1.0)))
+        [assessment] = bus.of_type("risk_assessment")
+        sizes[agreement] = assessment["data"]["position_size_usd"]
+    assert sizes[False] == pytest.approx(sizes[True] * 0.5, rel=1e-3)
+
+
+def test_decision_without_agreement_field_is_not_penalised():
+    from hybrid.risk_agent import RiskAgent
+
+    payload = _quant_decision(True)
+    del payload["data"]["agreement"]  # older publisher
+    bus = RecordingBus()
+    run(RiskAgent(bus, HybridConfig())._on_quant_decision(payload))
+    [assessment] = bus.of_type("risk_assessment")
+    assert assessment["data"]["position_size_usd"] > 0
+
+
+def test_orchestrator_logs_decision_source_and_llm_failures(capsys):
+    from hybrid.orchestrator import Orchestrator
+
+    orch = Orchestrator(RecordingBus(), HybridConfig())
+    run(orch._on_signal(_quant_decision(True, llm_age=1.234)))
+    run(orch._on_signal(_quant_decision(True)))
+    run(orch._on_signal({"type": "llm_analysis_result", "data": {
+        "ticker": "BTC-USD", "pair": "BTC/USDT", "success": True, "duration_seconds": 312.4}}))
+    run(orch._on_signal({"type": "llm_analysis_result", "data": {
+        "ticker": "ETH-USD", "pair": "ETH/USDT", "success": False, "error": "quota exceeded"}}))
+
+    out = capsys.readouterr().out
+    assert "Quant decision: BUY BTC/USDT (LLM 1.2h old)" in out
+    assert "Quant decision: BUY BTC/USDT (technicals only)" in out
+    assert "LLM analysis complete for BTC/USDT (312s)" in out
+    assert "[LLM] ETH/USDT analysis failed: quota exceeded" in out

@@ -208,7 +208,10 @@ class Orchestrator(BaseAgent):
         msg_type = payload.get("type")
 
         if msg_type == "quant_decision":
-            print(f"[Orchestrator] Quant decision: {payload['data']['action']} {payload['data']['ticker']}")
+            data = payload['data']
+            age = data.get("llm_age_hours")
+            source = f"LLM {age:.1f}h old" if age is not None else "technicals only"
+            print(f"[Orchestrator] Quant decision: {data['action']} {data['ticker']} ({source})")
 
         elif msg_type == "risk_assessment":
             data = payload['data']
@@ -218,8 +221,13 @@ class Orchestrator(BaseAgent):
                 await self._route_approved(data)
 
         elif msg_type == "llm_analysis_result":
-            if payload['data']['success']:
-                print(f"[Orchestrator] LLM analysis complete for {payload['data']['ticker']}")
+            data = payload['data']
+            pair = data.get("pair") or data['ticker']
+            if data['success']:
+                print(f"[Orchestrator] LLM analysis complete for {pair} "
+                      f"({data.get('duration_seconds') or 0:.0f}s)")
+            else:
+                print(f"[LLM] {pair} analysis failed: {data.get('error')}")
 
         elif msg_type == "btc_funding_position":
             action = payload['data'].get('action', 'unknown')

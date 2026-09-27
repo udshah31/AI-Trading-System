@@ -74,7 +74,9 @@ class RiskAgent(BaseAgent):
             composite_score=data["score"],
             confidence=data["confidence"],
             llm_component=0,
-            quant_component=0
+            quant_component=0,
+            # LLM and technicals pointing different ways halves the size (risk_manager check 8)
+            llm_quant_agreement=data.get("agreement", True),
         )
         
         tech = TechnicalSignals(
