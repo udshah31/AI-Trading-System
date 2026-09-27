@@ -5,6 +5,7 @@ Integrates with message bus for signal generation
 import asyncio
 import os
 import sys
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -62,6 +63,8 @@ class LLMAnalystAgent(BaseAgent):
         self._ta_config: Optional[Dict] = None
         self.active_analyses: Dict[str, asyncio.Task] = {}
         self._pending_futures: Dict[str, asyncio.Future] = {}
+        # held while a thread uses the shared graph; a timed-out run keeps its thread (and the lock)
+        self._graph_lock = threading.Lock()
         
         self.bus.subscribe(Channel.SIGNALS, self._on_analysis_request)
     
@@ -157,6 +160,24 @@ class LLMAnalystAgent(BaseAgent):
             return result
     
     def _run_ta_sync(self, request: LLMAnalysisRequest) -> LLMAnalysisResult:
+        # wait_for gives up on a slow run but can't stop its thread; never start a second run on
+        # the shared graph while that thread is still going
+        if not self._graph_lock.acquire(blocking=False):
+            return LLMAnalysisResult(
+                ticker=request.ticker,
+                trade_date=request.trade_date,
+                pair=request.pair,
+                llm_signals=LLMSignals(),
+                raw_state={},
+                success=False,
+                error="previous analysis still running (it timed out); skipped",
+            )
+        try:
+            return self._propagate(request)
+        finally:
+            self._graph_lock.release()
+
+    def _propagate(self, request: LLMAnalysisRequest) -> LLMAnalysisResult:
         try:
             ta = self._get_ta_graph()
             

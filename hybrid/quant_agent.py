@@ -13,6 +13,20 @@ from hybrid.pipeline import HybridPipeline
 from hybrid.signal_extractor import LLMSignals
 
 _LLM_FIELDS = {f.name for f in dataclasses.fields(LLMSignals)}
+_LLM_SCORES = ("sentiment_score", "fundamental_score", "news_score", "research_debate_score",
+               "trader_action_score", "portfolio_decision_score")
+
+
+def _valid_signals(raw) -> Optional[LLMSignals]:
+    """LLMSignals from a published dict, or None when it isn't a real, well-formed analysis."""
+    if not isinstance(raw, dict) or raw.get("available") is not True:
+        return None
+    for name in _LLM_SCORES:
+        v = raw.get(name, 0.5)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0.0 <= v <= 1.0:
+            return None
+    # ignore fields this version doesn't know (a newer publisher), never crash on them
+    return LLMSignals(**{k: v for k, v in raw.items() if k in _LLM_FIELDS})
 
 
 # Quote currencies that Yahoo Finance prices crypto in as plain USD
@@ -57,11 +71,13 @@ class QuantAgent(BaseAgent):
         raw = data.get("llm_signals")
         if not data.get("success") or not raw:
             return  # a failed run keeps the last good signals
-        # ignore fields this version doesn't know (a newer publisher), never crash on them
-        signals = LLMSignals(**{k: v for k, v in raw.items() if k in _LLM_FIELDS})
-        if not signals.available:
+        pair = data.get("pair") or data["ticker"]
+        signals = _valid_signals(raw)
+        if signals is None:
+            # storing bad values would break every decision for this pair until they went stale
+            print(f"[LLM] Ignoring malformed signals for {pair}")
             return
-        self.llm_latest[data.get("pair") or data["ticker"]] = (signals, self.clock())
+        self.llm_latest[pair] = (signals, self.clock())
 
     def fresh_llm(self, pair: str) -> tuple[Optional[LLMSignals], Optional[float]]:
         """The stored signals for `pair` and their age in hours, or (None, None) when absent or stale."""

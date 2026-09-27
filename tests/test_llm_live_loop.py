@@ -325,3 +325,57 @@ def test_loop_sends_nothing_when_disabled():
     bus = RecordingBus()
     run(llm_analysis_loop(bus, ("BTC/USDT",), LLMSettings(enabled=False), today=lambda: "2026-09-27"))
     assert bus.of_type("llm_analysis_request") == []
+
+
+# ── Final review fixes ──
+
+@pytest.mark.parametrize("bad", [
+    {"sentiment_score": "0.9"}, {"sentiment_score": None}, {"news_score": 1.7},
+    {"fundamental_score": True}, {"available": "false"}, "x",
+])
+def test_malformed_signals_are_ignored(bad, capsys):
+    _, agent, _ = _quant_agent(Clock())
+    payload = _llm_result()
+    if isinstance(bad, dict):
+        payload["data"]["llm_signals"].update(bad)
+    else:
+        payload["data"]["llm_signals"] = bad
+    run(agent._on_llm_result(payload))
+    assert agent.fresh_llm("BTC/USDT") == (None, None)
+    assert "malformed" in capsys.readouterr().out
+
+
+def test_timed_out_analysis_is_not_overlapped_on_the_shared_graph(monkeypatch):
+    import threading
+    from hybrid.llm_agent import LLMAnalysisRequest, LLMAnalystAgent
+
+    release, active, overlaps = threading.Event(), [], []
+
+    def propagate(ticker, date, asset_type):
+        if active:
+            overlaps.append(ticker)
+        active.append(ticker)
+        release.wait(1)  # hangs past the timeout
+        active.remove(ticker)
+        return {"final_trade_decision": "**Rating**: Hold"}, "Hold"
+
+    agent = LLMAnalystAgent(RecordingBus(), HybridConfig(), max_concurrent=1, timeout_seconds=0.2)
+    monkeypatch.setattr(agent, "_get_ta_graph", lambda: SimpleNamespace(propagate=propagate))
+    monkeypatch.setattr("hybrid.llm_agent.record_llm_analysis", lambda *a, **k: None)
+    monkeypatch.setattr("hybrid.llm_agent.default_judge", lambda: None)
+
+    def request(pair):
+        return LLMAnalysisRequest(ticker=pair, trade_date="2026-09-27", asset_type="crypto", pair=pair)
+
+    async def both():
+        first = await agent._run_analysis("a", request("BTC/USDT"))
+        second = await agent._run_analysis("b", request("ETH/USDT"))
+        return first, second
+
+    try:
+        first, second = run(both())
+    finally:
+        release.set()
+    assert not first.success and "timeout" in first.error
+    assert not second.success and "still running" in second.error
+    assert overlaps == []
