@@ -201,7 +201,7 @@ def extract_signals(final_state: dict, judge: Optional[TypeSafeJudge] = None) ->
 def _apply_judgments(signals: LLMSignals, asks: dict, judge: TypeSafeJudge) -> None:
     """One batched TypeSafe call; each question sees only its own report."""
     try:
-        response = judge.ask(state={key: text for key, text, _, _ in asks.values()},
+        response = judge.ask(state={key: _compact(text) for key, text, _, _ in asks.values()},
                              questions={name: question for name, (_, _, question, _) in asks.items()})
     except Exception as e:
         print(f"[SignalExtractor] TypeSafe unavailable, leaving {sorted(asks)} neutral: {e}")
@@ -215,6 +215,14 @@ def _apply_judgments(signals: LLMSignals, asks: dict, judge: TypeSafeJudge) -> N
             apply(response.choices[name].choice)
             signals.sources[name] = "typesafe"
             signals.confidences[name] = response.choices[name].confidence
+
+
+def _compact(text: str) -> str:
+    """Collapse runs of spaces/tabs and blank lines. An LLM once padded a 28k-character report
+    with ~1.8M spaces, which pushed the TypeSafe call over its token limit."""
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def _outlook_question(state_key: str, subject: str):
