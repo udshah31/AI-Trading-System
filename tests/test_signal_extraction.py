@@ -108,3 +108,16 @@ def test_default_judge_needs_api_key(monkeypatch):
     assert default_judge() is None
     monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
     assert isinstance(default_judge(), TypeSafeJudge)
+
+
+def test_whitespace_padding_is_collapsed_before_typesafe():
+    # Gemini once padded a 28k-character news report with ~1.8M spaces; the batched call hit
+    # TypeSafe's max_tokens_exceeded and left every free-text signal neutral.
+    padded = "Bitcoin ETF inflows were strong." + " " * 400_000 + "\n\n\n\n\nRates stay high.\t\t\t" + " " * 200_000
+    client = FakeTypeSafe(scores={"fundamental": 2.0, "news": 3.0})
+    s = extract_signals(_state(news_report=padded), judge=TypeSafeJudge(client=client))
+
+    state, _ = client.calls[0]
+    assert state["news_report"] == "Bitcoin ETF inflows were strong.\n\nRates stay high."
+    assert state["fundamentals_report"] == FUNDAMENTALS  # ordinary text is unchanged
+    assert s.sources["news"] == "typesafe"
