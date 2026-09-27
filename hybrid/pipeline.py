@@ -75,6 +75,7 @@ class HybridPipeline:
         trade_date: Optional[str] = None,
         asset_type: str = "stock",
         execute: bool = False,
+        llm_signals: Optional[LLMSignals] = None,
     ) -> "PipelineResult":
         """Run the complete hybrid analysis pipeline.
 
@@ -83,6 +84,7 @@ class HybridPipeline:
             trade_date: Analysis date (YYYY-MM-DD). Defaults to today.
             asset_type: "stock" or "crypto".
             execute: If True, submit the trade to Alpaca after approval.
+            llm_signals: Signals from an earlier LLM analysis; used instead of running TradingAgents.
 
         Returns:
             PipelineResult with all intermediate and final outputs.
@@ -97,7 +99,11 @@ class HybridPipeline:
 
         # ── Step 1: LLM Analysis (Track A) ──
         print("\n📊 Step 1: Running LLM Research Agents...")
-        if self.skip_llm:
+        if llm_signals is not None:
+            print("  Using stored signals from the latest LLM analysis.")
+            result.llm_signals = llm_signals
+            result.llm_raw_state = {}
+        elif self.skip_llm:
             print("  [SKIPPED] Using default neutral signals.")
             result.llm_signals = LLMSignals()
             result.llm_raw_state = {}
@@ -211,14 +217,16 @@ class HybridPipeline:
         self,
         ticker: str,
         trade_date: Optional[str] = None,
+        llm_signals: Optional[LLMSignals] = None,
     ) -> "PipelineResult":
-        """Run ONLY the quant analysis (no LLM, no API costs).
+        """Run the analysis without calling TradingAgents (no API costs).
 
-        Useful for quick technical screening of many tickers.
+        With `llm_signals` (from an earlier LLM analysis) the decision uses them; without,
+        it comes from the technical indicators alone.
         """
         original_skip = self.skip_llm
         self.skip_llm = True
-        result = self.analyze(ticker, trade_date, execute=False)
+        result = self.analyze(ticker, trade_date, execute=False, llm_signals=llm_signals)
         self.skip_llm = original_skip
         return result
 

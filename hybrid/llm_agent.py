@@ -5,6 +5,7 @@ Integrates with message bus for signal generation
 import asyncio
 import os
 import sys
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -29,6 +30,7 @@ class LLMAnalysisRequest:
     selected_analysts: Optional[List[str]] = None
     max_debate_rounds: int = 1
     max_risk_rounds: int = 1
+    pair: Optional[str] = None  # exchange pair the bot trades (BTC/USDT); ticker is the data symbol
 
 
 @dataclass
@@ -40,6 +42,7 @@ class LLMAnalysisResult:
     success: bool
     error: Optional[str] = None
     duration_seconds: float = 0
+    pair: Optional[str] = None
 
 
 class LLMAnalystAgent(BaseAgent):
@@ -60,6 +63,8 @@ class LLMAnalystAgent(BaseAgent):
         self._ta_config: Optional[Dict] = None
         self.active_analyses: Dict[str, asyncio.Task] = {}
         self._pending_futures: Dict[str, asyncio.Future] = {}
+        # held while a thread uses the shared graph; a timed-out run keeps its thread (and the lock)
+        self._graph_lock = threading.Lock()
         
         self.bus.subscribe(Channel.SIGNALS, self._on_analysis_request)
     
@@ -129,6 +134,7 @@ class LLMAnalystAgent(BaseAgent):
             result = LLMAnalysisResult(
                 ticker=request.ticker,
                 trade_date=request.trade_date,
+                pair=request.pair,
                 llm_signals=LLMSignals(),
                 raw_state={},
                 success=False,
@@ -143,6 +149,7 @@ class LLMAnalystAgent(BaseAgent):
             result = LLMAnalysisResult(
                 ticker=request.ticker,
                 trade_date=request.trade_date,
+                pair=request.pair,
                 llm_signals=LLMSignals(),
                 raw_state={},
                 success=False,
@@ -153,6 +160,24 @@ class LLMAnalystAgent(BaseAgent):
             return result
     
     def _run_ta_sync(self, request: LLMAnalysisRequest) -> LLMAnalysisResult:
+        # wait_for gives up on a slow run but can't stop its thread; never start a second run on
+        # the shared graph while that thread is still going
+        if not self._graph_lock.acquire(blocking=False):
+            return LLMAnalysisResult(
+                ticker=request.ticker,
+                trade_date=request.trade_date,
+                pair=request.pair,
+                llm_signals=LLMSignals(),
+                raw_state={},
+                success=False,
+                error="previous analysis still running (it timed out); skipped",
+            )
+        try:
+            return self._propagate(request)
+        finally:
+            self._graph_lock.release()
+
+    def _propagate(self, request: LLMAnalysisRequest) -> LLMAnalysisResult:
         try:
             ta = self._get_ta_graph()
             
@@ -171,6 +196,7 @@ class LLMAnalystAgent(BaseAgent):
             return LLMAnalysisResult(
                 ticker=request.ticker,
                 trade_date=request.trade_date,
+                pair=request.pair,
                 llm_signals=llm_signals,
                 raw_state=final_state,
                 success=True
@@ -180,6 +206,7 @@ class LLMAnalystAgent(BaseAgent):
             return LLMAnalysisResult(
                 ticker=request.ticker,
                 trade_date=request.trade_date,
+                pair=request.pair,
                 llm_signals=LLMSignals(),
                 raw_state={},
                 success=False,
@@ -193,6 +220,7 @@ class LLMAnalystAgent(BaseAgent):
             "request_id": request_id,
             "data": {
                 "ticker": result.ticker,
+                "pair": result.pair or result.ticker,
                 "trade_date": result.trade_date,
                 "success": result.success,
                 "error": result.error,
@@ -208,6 +236,10 @@ class LLMAnalystAgent(BaseAgent):
                     "sentiment_confidence": result.llm_signals.sentiment_confidence,
                     "portfolio_rating": result.llm_signals.portfolio_rating,
                     "trader_action": result.llm_signals.trader_action,
+                    # without `available` a receiver rebuilds placeholder signals and ignores them
+                    "available": result.llm_signals.available,
+                    "sources": result.llm_signals.sources,
+                    "confidences": result.llm_signals.confidences,
                 } if result.success else None
             }
         }, self.name)
@@ -383,7 +415,9 @@ class SignalFusionAgent(BaseAgent):
 
 def create_llm_agents(bus: MessageBus, config: HybridConfig) -> Dict[str, BaseAgent]:
     return {
-        "llm_analyst": LLMAnalystAgent(bus, config),
+        # one analysis at a time: the agent shares a single TradingAgentsGraph, which isn't safe
+        # to run concurrently; a full debate on a 1-OCPU VM can exceed 5 minutes
+        "llm_analyst": LLMAnalystAgent(bus, config, max_concurrent=1, timeout_seconds=900),
         "llm_orchestrator": LLMOrchestratorAgent(bus, config),
         "signal_fusion": SignalFusionAgent(bus, config),
     }
