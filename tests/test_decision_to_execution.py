@@ -67,9 +67,10 @@ def test_quant_agent_analyses_yahoo_symbol_and_reports_exchange_pair():
 
     analysed = []
 
-    def analyze_quant_only(symbol):
+    def analyze_quant_only(symbol, llm_signals=None):
         analysed.append(symbol)
-        decision = SimpleNamespace(action="BUY", composite_score=0.8, confidence=0.4)
+        decision = SimpleNamespace(action="BUY", composite_score=0.8, confidence=0.4,
+                                   llm_component=0.0, llm_quant_agreement=True)
         return SimpleNamespace(quant_decision=decision, tech_signals=_tech(0.8))
 
     bus = RecordingBus()

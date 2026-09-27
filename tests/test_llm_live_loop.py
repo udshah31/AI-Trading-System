@@ -100,3 +100,115 @@ def test_quant_only_without_llm_signals_is_unchanged(monkeypatch):
     assert not result.llm_signals.available
     assert result.quant_decision.llm_component == 0.0
     assert result.quant_decision.action == "HOLD"
+
+
+# ── Task 3: QuantAgent keeps the latest analysis per pair ──
+
+class Clock:
+    def __init__(self):
+        self.now = 1_000_000.0
+
+    def __call__(self):
+        return self.now
+
+
+def _llm_result(pair="BTC/USDT", success=True, signals=None):
+    sig = _bullish() if signals is None else signals
+    llm = None if not success else {k: getattr(sig, k) for k in (
+        "sentiment_score", "fundamental_score", "news_score", "research_debate_score",
+        "trader_action_score", "portfolio_decision_score", "available", "sources", "confidences")}
+    return {"type": "llm_analysis_result", "source": "llm_analyst",
+            "data": {"ticker": "BTC-USD", "pair": pair, "success": success,
+                     "error": None if success else "quota exceeded", "llm_signals": llm}}
+
+
+def _quant_agent(clock):
+    from hybrid.quant_agent import QuantAgent
+
+    bus = RecordingBus()
+    agent = QuantAgent(bus, HybridConfig(), llm_max_age_hours=8, clock=clock)
+    calls = []
+
+    def analyze_quant_only(symbol, llm_signals=None):
+        calls.append(llm_signals)
+        llm_on = llm_signals is not None
+        decision = SimpleNamespace(action="BUY" if llm_on else "HOLD", composite_score=0.8 if llm_on else 0.5,
+                                   confidence=0.4, llm_component=0.675 if llm_on else 0.0,
+                                   llm_quant_agreement=False)
+        return SimpleNamespace(quant_decision=decision, tech_signals=_tech(0.5))
+
+    agent.pipeline = SimpleNamespace(analyze_quant_only=analyze_quant_only)
+    return bus, agent, calls
+
+
+def _cycle(agent):
+    run(agent._on_request({"type": "analyze_request", "target": "quant_agent", "data": {"ticker": "BTC/USDT"}}))
+
+
+def test_fresh_analysis_is_used_by_the_next_decision():
+    clock = Clock()
+    bus, agent, calls = _quant_agent(clock)
+    run(agent._on_llm_result(_llm_result()))
+    clock.now += 1.5 * 3600
+    _cycle(agent)
+
+    assert calls[-1] is not None and calls[-1].available
+    [decision] = bus.of_type("quant_decision")
+    assert decision["data"]["action"] == "BUY"
+    assert decision["data"]["llm_component"] == pytest.approx(0.675)
+    assert decision["data"]["llm_age_hours"] == pytest.approx(1.5)
+    assert decision["data"]["agreement"] is False
+
+
+def test_no_analysis_means_technicals_only():
+    bus, agent, calls = _quant_agent(Clock())
+    _cycle(agent)
+    assert calls == [None]
+    [decision] = bus.of_type("quant_decision")
+    assert decision["data"]["llm_component"] is None and decision["data"]["llm_age_hours"] is None
+
+
+def test_signals_at_the_age_limit_are_used_and_older_ones_are_not():
+    clock = Clock()
+    _, agent, _ = _quant_agent(clock)
+    run(agent._on_llm_result(_llm_result()))
+    clock.now += 8 * 3600
+    assert agent.fresh_llm("BTC/USDT")[0] is not None
+    clock.now += 1
+    assert agent.fresh_llm("BTC/USDT") == (None, None)
+
+
+def test_failed_analysis_keeps_the_last_good_signals():
+    clock = Clock()
+    _, agent, _ = _quant_agent(clock)
+    run(agent._on_llm_result(_llm_result()))
+    run(agent._on_llm_result(_llm_result(success=False)))
+    signals, age = agent.fresh_llm("BTC/USDT")
+    assert signals is not None and signals.sentiment_score == 0.9 and age == 0
+
+
+def test_results_are_kept_per_pair():
+    _, agent, _ = _quant_agent(Clock())
+    run(agent._on_llm_result(_llm_result(pair="ETH/USDT")))
+    assert agent.fresh_llm("BTC/USDT") == (None, None)
+    assert agent.fresh_llm("ETH/USDT")[0] is not None
+
+
+def test_unknown_signal_fields_are_ignored_and_null_signals_are_skipped():
+    _, agent, _ = _quant_agent(Clock())
+    newer = _llm_result()
+    newer["data"]["llm_signals"]["macro_score"] = 0.7  # field from a newer publisher
+    run(agent._on_llm_result(newer))
+    assert agent.fresh_llm("BTC/USDT")[0] is not None
+
+    _, agent, _ = _quant_agent(Clock())
+    broken = _llm_result()
+    broken["data"]["llm_signals"] = None  # success without signals
+    run(agent._on_llm_result(broken))
+    assert agent.fresh_llm("BTC/USDT") == (None, None)
+
+
+def test_placeholder_signals_are_not_stored():
+    _, agent, _ = _quant_agent(Clock())
+    run(agent._on_llm_result(_llm_result(signals=LLMSignals())))  # available=False
+    assert agent.fresh_llm("BTC/USDT") == (None, None)
