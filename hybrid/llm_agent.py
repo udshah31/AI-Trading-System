@@ -29,6 +29,7 @@ class LLMAnalysisRequest:
     selected_analysts: Optional[List[str]] = None
     max_debate_rounds: int = 1
     max_risk_rounds: int = 1
+    pair: Optional[str] = None  # exchange pair the bot trades (BTC/USDT); ticker is the data symbol
 
 
 @dataclass
@@ -40,6 +41,7 @@ class LLMAnalysisResult:
     success: bool
     error: Optional[str] = None
     duration_seconds: float = 0
+    pair: Optional[str] = None
 
 
 class LLMAnalystAgent(BaseAgent):
@@ -129,6 +131,7 @@ class LLMAnalystAgent(BaseAgent):
             result = LLMAnalysisResult(
                 ticker=request.ticker,
                 trade_date=request.trade_date,
+                pair=request.pair,
                 llm_signals=LLMSignals(),
                 raw_state={},
                 success=False,
@@ -143,6 +146,7 @@ class LLMAnalystAgent(BaseAgent):
             result = LLMAnalysisResult(
                 ticker=request.ticker,
                 trade_date=request.trade_date,
+                pair=request.pair,
                 llm_signals=LLMSignals(),
                 raw_state={},
                 success=False,
@@ -171,6 +175,7 @@ class LLMAnalystAgent(BaseAgent):
             return LLMAnalysisResult(
                 ticker=request.ticker,
                 trade_date=request.trade_date,
+                pair=request.pair,
                 llm_signals=llm_signals,
                 raw_state=final_state,
                 success=True
@@ -180,6 +185,7 @@ class LLMAnalystAgent(BaseAgent):
             return LLMAnalysisResult(
                 ticker=request.ticker,
                 trade_date=request.trade_date,
+                pair=request.pair,
                 llm_signals=LLMSignals(),
                 raw_state={},
                 success=False,
@@ -193,6 +199,7 @@ class LLMAnalystAgent(BaseAgent):
             "request_id": request_id,
             "data": {
                 "ticker": result.ticker,
+                "pair": result.pair or result.ticker,
                 "trade_date": result.trade_date,
                 "success": result.success,
                 "error": result.error,
@@ -208,6 +215,10 @@ class LLMAnalystAgent(BaseAgent):
                     "sentiment_confidence": result.llm_signals.sentiment_confidence,
                     "portfolio_rating": result.llm_signals.portfolio_rating,
                     "trader_action": result.llm_signals.trader_action,
+                    # without `available` a receiver rebuilds placeholder signals and ignores them
+                    "available": result.llm_signals.available,
+                    "sources": result.llm_signals.sources,
+                    "confidences": result.llm_signals.confidences,
                 } if result.success else None
             }
         }, self.name)
@@ -383,7 +394,9 @@ class SignalFusionAgent(BaseAgent):
 
 def create_llm_agents(bus: MessageBus, config: HybridConfig) -> Dict[str, BaseAgent]:
     return {
-        "llm_analyst": LLMAnalystAgent(bus, config),
+        # one analysis at a time: the agent shares a single TradingAgentsGraph, which isn't safe
+        # to run concurrently; a full debate on a 1-OCPU VM can exceed 5 minutes
+        "llm_analyst": LLMAnalystAgent(bus, config, max_concurrent=1, timeout_seconds=900),
         "llm_orchestrator": LLMOrchestratorAgent(bus, config),
         "signal_fusion": SignalFusionAgent(bus, config),
     }

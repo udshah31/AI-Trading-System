@@ -1,0 +1,76 @@
+"""LLM analysis in the live loop: results keep their availability, the quant agent uses fresh
+stored signals, and the scheduler asks for analyses every LLM_INTERVAL_HOURS."""
+import asyncio
+from types import SimpleNamespace
+
+import pytest
+
+from hybrid.config import HybridConfig
+from hybrid.signal_extractor import LLMSignals
+from hybrid.technical_indicators import TechnicalSignals
+
+run = asyncio.run
+
+
+class RecordingBus:
+    def __init__(self):
+        self.published = []
+
+    def subscribe(self, channel, handler):
+        pass
+
+    def publish(self, channel, payload, source):
+        self.published.append((channel, payload))
+
+    def of_type(self, msg_type):
+        return [p for _, p in self.published if p.get("type") == msg_type]
+
+
+def _bullish():
+    return LLMSignals(available=True, sentiment_score=0.9, fundamental_score=0.9, news_score=0.9,
+                      research_debate_score=0.9, sources={"news": "typesafe"}, confidences={"news": 0.8})
+
+
+def _tech(score):
+    return TechnicalSignals(rsi_score=score, ema_crossover_score=score, bollinger_score=score,
+                            volume_score=score, current_price=100.0, atr=2.0)
+
+
+# ── Task 1: the published result survives the round trip ──
+
+def test_published_result_keeps_availability_and_pair():
+    from hybrid.llm_agent import LLMAnalysisResult, LLMAnalystAgent
+
+    bus = RecordingBus()
+    agent = LLMAnalystAgent(bus, HybridConfig())
+    result = LLMAnalysisResult(ticker="BTC-USD", trade_date="2026-09-27", llm_signals=_bullish(),
+                               raw_state={}, success=True, pair="BTC/USDT")
+    run(agent._publish_result("r1", result))
+
+    [payload] = bus.of_type("llm_analysis_result")
+    assert payload["data"]["pair"] == "BTC/USDT"
+    rebuilt = LLMSignals(**payload["data"]["llm_signals"])
+    assert rebuilt.available is True
+    assert rebuilt.sources == {"news": "typesafe"} and rebuilt.confidences == {"news": 0.8}
+
+
+def test_request_pair_reaches_the_result(monkeypatch):
+    from hybrid.llm_agent import LLMAnalysisRequest, LLMAnalystAgent
+
+    agent = LLMAnalystAgent(RecordingBus(), HybridConfig())
+    graph = SimpleNamespace(
+        propagate=lambda ticker, date, asset_type: ({"final_trade_decision": "**Rating**: Buy"}, "Buy"))
+    monkeypatch.setattr(agent, "_get_ta_graph", lambda: graph)
+    monkeypatch.setattr("hybrid.llm_agent.record_llm_analysis", lambda *a, **k: None)
+    monkeypatch.setattr("hybrid.llm_agent.default_judge", lambda: None)
+
+    result = agent._run_ta_sync(LLMAnalysisRequest(ticker="BTC-USD", trade_date="2026-09-27",
+                                                   asset_type="crypto", pair="BTC/USDT"))
+    assert result.success and result.pair == "BTC/USDT" and result.llm_signals.available
+
+
+def test_live_analyst_runs_one_at_a_time_with_a_long_timeout():
+    from hybrid.llm_agent import create_llm_agents
+
+    analyst = create_llm_agents(RecordingBus(), HybridConfig())["llm_analyst"]
+    assert analyst.max_concurrent == 1 and analyst.timeout_seconds == 900
