@@ -263,3 +263,65 @@ def test_orchestrator_logs_decision_source_and_llm_failures(capsys):
     assert "Quant decision: BUY BTC/USDT (technicals only)" in out
     assert "LLM analysis complete for BTC/USDT (312s)" in out
     assert "[LLM] ETH/USDT analysis failed: quota exceeded" in out
+
+
+# ── Task 5: scheduler ──
+
+def test_settings_defaults_and_overrides():
+    from hybrid.llm_schedule import LLMSettings, llm_settings
+
+    assert llm_settings({}) == LLMSettings(enabled=True, interval_hours=4.0, max_age_hours=8.0)
+    assert llm_settings({"LLM_ENABLED": "FALSE", "LLM_INTERVAL_HOURS": "6", "LLM_MAX_AGE_HOURS": "12"}) == \
+        LLMSettings(enabled=False, interval_hours=6.0, max_age_hours=12.0)
+
+
+@pytest.mark.parametrize("bad", ["4h", "0", "-1", ""])
+def test_bad_interval_falls_back_to_the_default(bad, capsys):
+    from hybrid.llm_schedule import llm_settings
+
+    assert llm_settings({"LLM_INTERVAL_HOURS": bad}).interval_hours == 4.0
+    if bad:
+        assert "LLM_INTERVAL_HOURS" in capsys.readouterr().out
+
+
+def test_requests_carry_the_yahoo_symbol_and_the_pair():
+    from hybrid.llm_schedule import request_analyses
+
+    bus = RecordingBus()
+    request_analyses(bus, ("BTC/USDT", "ETH/USDT"), "2026-09-27")
+    requests = bus.of_type("llm_analysis_request")
+    assert [r["target"] for r in requests] == ["llm_analyst", "llm_analyst"]
+    assert [r["data"] for r in requests] == [
+        {"ticker": "BTC-USD", "pair": "BTC/USDT", "trade_date": "2026-09-27", "asset_type": "crypto"},
+        {"ticker": "ETH-USD", "pair": "ETH/USDT", "trade_date": "2026-09-27", "asset_type": "crypto"},
+    ]
+    assert requests[0]["request_id"] != requests[1]["request_id"]
+
+
+class _Stop(Exception):
+    pass
+
+
+def test_loop_requests_at_startup_and_every_interval():
+    from hybrid.llm_schedule import LLMSettings, llm_analysis_loop
+
+    bus, sleeps = RecordingBus(), []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise _Stop
+
+    with pytest.raises(_Stop):
+        run(llm_analysis_loop(bus, ("BTC/USDT", "ETH/USDT"), LLMSettings(interval_hours=4),
+                              sleep=sleep, today=lambda: "2026-09-27"))
+    assert len(bus.of_type("llm_analysis_request")) == 4  # startup round + one after 4h
+    assert sleeps == [4 * 3600, 4 * 3600]
+
+
+def test_loop_sends_nothing_when_disabled():
+    from hybrid.llm_schedule import LLMSettings, llm_analysis_loop
+
+    bus = RecordingBus()
+    run(llm_analysis_loop(bus, ("BTC/USDT",), LLMSettings(enabled=False), today=lambda: "2026-09-27"))
+    assert bus.of_type("llm_analysis_request") == []

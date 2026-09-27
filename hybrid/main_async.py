@@ -20,6 +20,7 @@ from hybrid.execution_agent import ExecutionAgent
 from hybrid.orchestrator import Orchestrator, RedisHoldingsStore, holdings_key
 from hybrid.sniper_bot import SniperBot
 from hybrid.llm_agent import create_llm_agents
+from hybrid.llm_schedule import TRADED_PAIRS, llm_analysis_loop, llm_settings
 from hybrid.storage import StorageService
 from hybrid.storage_agent import StorageAgent
 from hybrid.strategies.btc_funding import create_btc_funding_strategy
@@ -99,7 +100,9 @@ class PaperTradingSystem:
 
         # Core agents
         self.agents['data'] = DataAgent(self.bus, symbols=["BTC/USDT", "ETH/USDT", "SOL/USDT"], exchange_id="kraken")
-        self.agents['quant'] = QuantAgent(self.bus, self.config)
+        self.llm_settings = llm_settings()
+        self.agents['quant'] = QuantAgent(self.bus, self.config,
+                                          llm_max_age_hours=self.llm_settings.max_age_hours)
         self.agents['risk'] = RiskAgent(self.bus, self.config)
         if self.storage:
             self.agents['risk'].set_storage(self.storage)
@@ -187,10 +190,12 @@ class PaperTradingSystem:
         
         # Schedule periodic analysis
         analysis_task = asyncio.create_task(self._analysis_loop())
+        llm_task = asyncio.create_task(llm_analysis_loop(self.bus, TRADED_PAIRS, self.llm_settings))
         learning_task = asyncio.create_task(self._learning_loop())
         heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         equity_snapshot_task = asyncio.create_task(self._equity_snapshot_loop())
-        self.background_tasks.extend([analysis_task, heartbeat_task, equity_snapshot_task, learning_task])
+        self.background_tasks.extend([analysis_task, llm_task, heartbeat_task, equity_snapshot_task,
+                                      learning_task])
         
         try:
             # Wait for shutdown signal
@@ -239,8 +244,8 @@ class PaperTradingSystem:
                     await self.bus.client.set("system:last_analysis", str(time.time()))
                 except Exception:
                     pass
-                await orchestrator.analyze("BTC/USDT")
-                await orchestrator.analyze("ETH/USDT")
+                for pair in TRADED_PAIRS:
+                    await orchestrator.analyze(pair)
     
     async def _apply_active_weights(self):
         """Use the technical weights last approved on the dashboard (none: keep the starting ones)."""
