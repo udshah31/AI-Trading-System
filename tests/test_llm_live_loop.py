@@ -74,3 +74,29 @@ def test_live_analyst_runs_one_at_a_time_with_a_long_timeout():
 
     analyst = create_llm_agents(RecordingBus(), HybridConfig())["llm_analyst"]
     assert analyst.max_concurrent == 1 and analyst.timeout_seconds == 900
+
+
+# ── Task 2: pipeline uses stored signals ──
+
+def _pipeline(monkeypatch, tech):
+    from hybrid.pipeline import HybridPipeline
+
+    monkeypatch.setattr("hybrid.pipeline.compute_technical_signals", lambda **kw: tech)
+    pipeline = HybridPipeline(HybridConfig(), skip_llm=True)
+    monkeypatch.setattr(pipeline, "_save_report", lambda result: None)  # don't write into results/
+    return pipeline
+
+
+def test_quant_only_uses_stored_llm_signals(monkeypatch):
+    result = _pipeline(monkeypatch, _tech(0.5)).analyze_quant_only("BTC-USD", llm_signals=_bullish())
+    assert result.llm_signals.available
+    assert result.quant_decision.llm_component > 0
+    assert result.quant_decision.composite_score == pytest.approx(0.8)  # 0.75*0.9 + 0.25*0.5
+    assert result.quant_decision.action == "BUY"
+
+
+def test_quant_only_without_llm_signals_is_unchanged(monkeypatch):
+    result = _pipeline(monkeypatch, _tech(0.5)).analyze_quant_only("BTC-USD")
+    assert not result.llm_signals.available
+    assert result.quant_decision.llm_component == 0.0
+    assert result.quant_decision.action == "HOLD"
