@@ -761,7 +761,8 @@ class KrakenExecutor:
         closed = (await self._client().get_closed_orders(userref=userref)).get("closed", {})
         return [
             {"txid": txid, "status": info.get("status"), "side": info.get("descr", {}).get("type"),
-             "vol_exec": float(info.get("vol_exec") or 0)}
+             "vol_exec": float(info.get("vol_exec") or 0),
+             "avg_price": float(info.get("price") or info.get("avg_price") or 0) or None}
             for txid, info in {**open_, **closed}.items()
             if int(info.get("userref") or 0) == userref
         ]

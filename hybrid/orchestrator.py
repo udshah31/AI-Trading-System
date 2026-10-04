@@ -1,7 +1,9 @@
 """
 Orchestrator - Coordinates analysis schedule and turns approved decisions into orders
 """
+import asyncio
 import json
+import math
 from typing import Optional
 import secrets
 import time
@@ -121,6 +123,7 @@ class Orchestrator(BaseAgent):
         self.holdings: dict[str, float] = {}  # ticker -> volume the bot bought and holds
         self.pending: dict[str, dict] = {}    # client_order_id -> {ticker, side, volume, userref}
         self._checking: set[str] = set()      # tickers awaiting a balance check
+        self._settlement_lock = asyncio.Lock()  # execution callbacks and reconciliation share one writer
         self.stops: dict[str, float] = {}     # ticker -> stop-loss price for the bot's position
         self._stop_retry_at: dict[str, float] = {}  # ticker -> earliest retry after a failed exit
         self._clock = clock
@@ -149,33 +152,86 @@ class Orchestrator(BaseAgent):
                     print(f"[Orchestrator] ⚠️ {ticker} has no stop-loss recorded; it only exits on a SELL decision")
         print("[Orchestrator] Started")
 
-    async def _reconcile_pending(self):
-        """Settle orders that were in flight when the previous process stopped."""
-        try:
-            leftover = await self.store.load_pending()
-        except Exception as e:
-            print(f"[Orchestrator] ⚠️ Could not load in-flight orders ({e})")
-            return
-        for cid, order in leftover.items():
+    async def _reconcile_pending(self, startup: bool = True):
+        """Restore pending intents once, then poll only current unresolved orders."""
+        async with self._settlement_lock:
+            if startup and self.store:
+                try:
+                    self.pending.update(await self.store.load_pending())
+                except Exception as e:
+                    print(f"[Orchestrator] ⚠️ Could not load in-flight orders ({e})")
+                    return
+            await self._settle_pending(startup)
+
+    async def _settle_pending(self, startup: bool):
+        for cid, order in list(self.pending.items()):
             ticker, side = order["ticker"], order["side"]
             if not self.broker:
+                if not startup:
+                    continue  # simulated results may still be queued on the bus
                 print(f"[Orchestrator] Dropping simulated in-flight {side} {ticker}: no exchange to check")
                 await self._forget_pending(cid)
                 continue
+            if not startup and not order.get("awaiting_settlement") and time.time() - order.get("sent_at", 0) < 30:
+                continue  # submission/polling is still owned by the executor
             try:
                 found = await self.broker.find_orders(cid, order.get("userref"))
             except Exception as e:
                 self.pending[cid] = order  # outcome unknown: keep blocking this ticker
-                print(f"[Orchestrator] ⚠️ {side} {ticker} still unresolved, Kraken lookup failed ({e}); "
+                print(f"[Orchestrator] ⚠️ {side} {ticker} still unresolved, broker lookup failed ({e}); "
                       "not trading it until resolved")
                 continue
-            if any(o["status"] in ("pending", "open") for o in found):
+            if not found:
+                if not startup:
+                    self._notify(f"{side.capitalize()} {ticker} not found on broker; outcome unknown, keeping pending",
+                                 level="error")
+                    continue  # a 404 during/after submission is not proof of rejection
+                print(f"[Orchestrator] In-flight {side} {ticker} never reached the broker; dropped")
+                await self._forget_pending(cid)
+                continue
+            terminal = {"closed", "filled", "partial", "canceled", "cancelled", "expired", "rejected"}
+            if any(o.get("status") not in terminal for o in found):
                 self.pending[cid] = order
                 print(f"[Orchestrator] ⚠️ {side} {ticker} still open on Kraken; not trading it until it settles")
                 continue
-            filled = sum(o["vol_exec"] for o in found)
-            if filled > 0 and order.get("price"):
-                self.portfolio.apply_fill(ticker, side, filled, float(order["price"]))
+            volumes = [float(o.get("vol_exec") or 0) for o in found]
+            if (any(not math.isfinite(v) or v < 0 for v in volumes)
+                    or any(o.get("side") != side for o in found)):
+                self._notify(f"Invalid broker fill for {ticker}; keeping unresolved", level="error")
+                continue
+            filled = sum(volumes)
+            if filled > float(order["volume"]) + 1e-9:
+                self._notify(f"Broker fill exceeds requested volume for {ticker}; keeping unresolved", level="error")
+                continue
+            numeric_prices: list[float] = []
+            # Only old startup records may lack broker prices. Runtime settlement never invents one.
+            for item, volume in zip(found, volumes):
+                if volume <= 0:
+                    continue
+                raw_price = item.get("avg_price")
+                if startup:
+                    raw_price = raw_price or order.get("price")
+                try:
+                    price = float(raw_price)
+                except (TypeError, ValueError):
+                    numeric_prices = []
+                    break
+                if not math.isfinite(price) or price <= 0:
+                    numeric_prices = []
+                    break
+                numeric_prices.append(price)
+            fill_price = (sum(v * p for v, p in zip((v for v in volumes if v > 0), numeric_prices)) / filled
+                          if filled > 0 and len(numeric_prices) == sum(v > 0 for v in volumes) else None)
+            if filled > 0 and fill_price is None:
+                print(f"[Orchestrator] ⚠️ {side} {ticker} filled but broker returned no fill price; keeping unresolved")
+                continue
+            if filled > 0:
+                assert fill_price is not None
+                realised = self.portfolio.apply_fill(ticker, side, filled, fill_price)
+                self.bus.publish(Channel.SIGNALS, {"type": "trade_filled", "source": self.name, "data": {
+                    "symbol": ticker, "side": side, "volume": filled, "price": float(fill_price),
+                    "realized_pnl": realised, "client_order_id": cid,
+                    "reason": order.get("reason", "reconciliation"), "exchange": self.broker.name}}, self.name)
             if filled > 0:
                 if side == "buy":
                     self.holdings[ticker] = filled
@@ -184,17 +240,22 @@ class Orchestrator(BaseAgent):
                     await self._sync_to_broker(ticker)
                 else:
                     remaining = self.holdings.get(ticker, 0.0) - filled
-                    if remaining > 1e-12 and not self._is_dust(remaining, order.get("price")):
+                    if remaining > 1e-12 and not self._is_dust(remaining, fill_price):
                         self.holdings[ticker] = remaining
                     else:
                         self.holdings.pop(ticker, None)
                         self.stops.pop(ticker, None)
                         self.portfolio.set_volume(ticker, 0.0)
                 await self._persist(ticker)
-                print(f"[Orchestrator] Recovered in-flight {side} {ticker}: filled {filled} on Kraken")
+                await self._portfolio_changed(force=True)
+                print(f"[Orchestrator] Reconciled {side} {ticker}: filled {filled} @ {fill_price}")
             else:
                 print(f"[Orchestrator] In-flight {side} {ticker} never filled on Kraken; dropped")
             await self._forget_pending(cid)
+
+    async def reconcile_pending_orders(self):
+        """Public periodic reconciliation hook for delayed broker fills."""
+        await self._reconcile_pending(startup=False)
 
     async def _forget_pending(self, client_order_id: str):
         self.pending.pop(client_order_id, None)
@@ -236,6 +297,10 @@ class Orchestrator(BaseAgent):
     async def _on_order(self, payload: dict):
         if payload.get("type") != "execution_result":
             return
+        async with self._settlement_lock:
+            await self._process_execution_result(payload)
+
+    async def _process_execution_result(self, payload: dict):
         data = payload["data"]
         cid = data.get("client_order_id")
         order = self.pending.get(cid)
@@ -245,6 +310,7 @@ class Orchestrator(BaseAgent):
             return
         ticker = order["ticker"]
         if data.get("status") == "open":
+            order["awaiting_settlement"] = True
             # the broker hasn't filled it yet: keep it pending (blocks the coin) until it resolves
             self._notify(f"{order['side'].capitalize()} of {ticker} not filled yet; waiting before trading it again")
             return
