@@ -217,6 +217,7 @@ class HybridPipeline:
         self,
         ticker: str,
         trade_date: Optional[str] = None,
+        asset_type: str = "stock",
         llm_signals: Optional[LLMSignals] = None,
     ) -> "PipelineResult":
         """Run the analysis without calling TradingAgents (no API costs).
@@ -226,7 +227,9 @@ class HybridPipeline:
         """
         original_skip = self.skip_llm
         self.skip_llm = True
-        result = self.analyze(ticker, trade_date, execute=False, llm_signals=llm_signals)
+        result = self.analyze(
+            ticker, trade_date, asset_type=asset_type, execute=False, llm_signals=llm_signals
+        )
         self.skip_llm = original_skip
         return result
 

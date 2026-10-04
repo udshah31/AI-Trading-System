@@ -59,6 +59,24 @@ def _run_module():
     return module
 
 
+def test_quant_only_cli_preserves_asset_type(monkeypatch):
+    run = _run_module()
+    captured = {}
+
+    class FakePipeline:
+        def __init__(self, **kwargs):
+            pass
+
+        def analyze_quant_only(self, ticker, trade_date, *, asset_type):
+            captured.update(ticker=ticker, trade_date=trade_date, asset_type=asset_type)
+            return types.SimpleNamespace(quant_decision=None)
+
+    monkeypatch.setattr(run, "HybridPipeline", FakePipeline)
+    monkeypatch.setattr(sys, "argv", ["run.py", "--ticker", "BTC-USD", "--asset", "crypto", "--quant-only"])
+    run.main()
+    assert captured == {"ticker": "BTC-USD", "trade_date": None, "asset_type": "crypto"}
+
+
 def test_cli_passes_only_llm_flags_that_were_given():
     run = _run_module()
     parser = run.build_parser()
