@@ -6,14 +6,14 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, AsyncIterator, Dict, List, Optional
 from uuid import uuid4
 
 from sqlalchemy import (
     Column, String, Integer, BigInteger, Numeric, DateTime, 
-    Text, Index, ForeignKey, Enum as SQLEnum, Boolean, JSON, UniqueConstraint, text
+    Text, Index, ForeignKey, Enum as SQLEnum, Boolean, JSON, UniqueConstraint, text, Date
 )
 from sqlalchemy.ext.asyncio import (
     create_async_engine, AsyncSession, async_sessionmaker
@@ -280,6 +280,23 @@ class WeightProposal(Base):
     proposed: Mapped[dict] = mapped_column(JSON, nullable=False)
     metrics: Mapped[dict] = mapped_column(JSON, nullable=False)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class StockShadowDecision(Base):
+    """Separate research ledger: never consumed by risk, execution or weight learning."""
+    __tablename__ = "stock_shadow_decisions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    session_date: Mapped[date] = mapped_column(Date, nullable=False)
+    session_close: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    action: Mapped[str] = mapped_column(String(10), nullable=False)
+    score: Mapped[float] = mapped_column(Numeric(8, 6), nullable=False)
+    confidence: Mapped[float] = mapped_column(Numeric(8, 6), nullable=False)
+    close_price: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    features: Mapped[dict] = mapped_column(JSON, nullable=False)
+    __table_args__ = (UniqueConstraint("symbol", "session_date", name="uq_stock_shadow_session"),)
 
 
 # =============================================================================

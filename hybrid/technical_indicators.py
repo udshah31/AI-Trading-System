@@ -49,6 +49,7 @@ class TechnicalSignals:
     ticker: str = ""
     as_of_date: str = ""
     data_points: int = 0
+    last_bar_date: str = ""  # actual final input bar, distinct from requested analysis date
 
     def summary(self) -> str:
         """Human-readable summary of technical signals."""
@@ -141,6 +142,8 @@ def compute_technical_signals(
 
     if df.empty:
         return signals
+
+    signals.last_bar_date = df.index[-1].date().isoformat()
 
     # ── Current Price ──
     signals.current_price = float(df["Close"].iloc[-1])

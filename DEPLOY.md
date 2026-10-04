@@ -79,6 +79,36 @@ TradingAgents itself is omitted from the constraints because its source is pinne
 its dependencies are included. Cross-platform resolution is not a substitute for building
 and testing on the target OS. Only deploy after the CI checks and the deployment checks pass.
 
+## Optional stock shadow research (SPY / QQQ)
+
+Stock shadow research is **off by default**. Enable it with `STOCK_SHADOW_ENABLED=true`
+in the deployment `.env`. It requires `BROKER=alpaca`, valid Alpaca paper credentials for
+calendar access, and working database storage. Set the flag for both application services
+(the Compose file already forwards it to the bot and dashboard).
+
+The bot checks every five minutes and selects the latest exchange session that closed at
+least 20 minutes ago. Alpaca's calendar supplies holidays, early closes and exchange-local
+session times; timezone conversion handles daylight saving. Each SPY/QQQ session is saved
+once in `stock_shadow_decisions`, with a database uniqueness constraint that survives
+restarts. On first enable/startup it can catch up the last completed session.
+
+Only valid completed daily bars are accepted; missing/stale/non-finite data is skipped and
+retried. This version uses **technical-only signals and Yahoo adjusted daily closes**, not
+tradable execution quotes. It records the technical weights used. No stock LLM requests,
+risk approvals, broker orders, or stock outcomes for the crypto learning loop are generated.
+The existing BTC/ETH schedule and capital are unchanged.
+
+The dashboard's beginner-friendly **Explore stocks** section and authenticated
+`GET /api/stocks/shadow` endpoint show the latest persisted results. The enabled indicator
+reflects the configuration flag, not proof of healthy calendar/data access; inspect bot logs
+for `[StockShadow]` failures and the displayed session dates for freshness. Historical rows
+remain visible when the feature is disabled. A BUY/SELL label here is a research signal,
+**not an executed trade or an instruction to trade**.
+
+Test locally without API calls: `.venv/bin/python -m pytest tests/test_stock_shadow.py -q -p no:anchorpy`.
+Enabling this feature on Oracle requires a separate reviewed deployment; do not restart the
+production stack solely to test local changes.
+
 ## 1. Create the VM (once)
 
 1. OCI Console → Compute → Instances → **Create instance**.
