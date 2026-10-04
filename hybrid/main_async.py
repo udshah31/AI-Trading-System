@@ -124,7 +124,7 @@ class PaperTradingSystem:
         if stock_shadow_enabled():
             if self.storage and broker is not None:
                 self.stock_shadow = StockShadow(self.storage, self.config, broker.client)
-                print("[StockShadow] SPY/QQQ research enabled — no stock orders")
+                print("[StockShadow] ETF and sector-stock research enabled — no stock orders")
             else:
                 print("[StockShadow] Disabled: requires PostgreSQL and BROKER=alpaca")
         await self._init_remaining_agents()
