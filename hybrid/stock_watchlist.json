@@ -1,0 +1,958 @@
+{
+  "retrieved_at": "2026-10-04T09:05:56Z",
+  "method": "Market-cap snapshot of the ten largest distinct US-exchange-listed companies in each of the ten requested sectors, using Stock Analysis sector tables fetched via authenticated Firecrawl CLI with --max-age 0. The obsolete /list/technology-stocks/ and /list/healthcare-stocks/ URLs returned 404; the working /stocks/sector/ pages are cited. Companies are taken in descending source market-cap order after excluding alternate securities and duplicate companies; rank is the resulting company rank, not necessarily the original table row number. Eligibility includes US-listed domestic and foreign common equities, ADRs/depositary shares, and REIT common equities, regardless of company domicile; it excludes ETFs, funds, preferred securities, debt, OTC-only securities, and non-US-exchange-only listings. All 100 selected tickers were corroborated against the source Nasdaq and NYSE stock lists (https://stockanalysis.com/list/nasdaq-stocks/ and https://stockanalysis.com/list/nyse-stocks/); SKHY, SPCX, and VMRK were additionally checked on their individual Stock Analysis company pages. A company appears once: use GOOGL rather than GOOG, BRK-B rather than BRK-A, PBR rather than PBR.A, and SO rather than SOMN. Skipping PBR.A brings PSX into Energy; skipping SOMN brings VST into Utilities. Symbols use Yahoo-compatible class notation (BRK.B becomes BRK-B). Sector assignments follow the Stock Analysis taxonomy described at https://stockanalysis.com/stocks/industry/, not an independently verified official GICS classification or a mixture of different vendors. Source Technology maps to requested IT / Technology; the other nine labels are capitalization-normalized equivalents of the source labels. Materials is intentionally omitted. Provider-specific assignments, such as AppLovin in Communication Services, are retained even when other taxonomies may assign a company differently. market_cap_usd is the source-reported company market capitalization, not the value of only the US-listed ADR float; displayed T/B/M/K values are converted to numeric USD without inventing precision beyond the rounded source display. The sector and exchange tables supply no explicit market-cap as-of timestamp, so sources.as_of is null. retrieved_at records completion of source collection in UTC, not an exchange timestamp, and fresh retrieval does not prove real-time quotes. Individual pages checked for SKHY, SPCX, and VMRK show an Oct 2, 2026 close; that date is not extrapolated to all sector-table valuations. This is a single-provider snapshot, not an independently reconciled market-wide ranking or a live data feed.",
+  "sources": [
+    {
+      "sector": "IT / Technology",
+      "url": "https://stockanalysis.com/stocks/sector/technology/",
+      "as_of": null
+    },
+    {
+      "sector": "Healthcare",
+      "url": "https://stockanalysis.com/stocks/sector/healthcare/",
+      "as_of": null
+    },
+    {
+      "sector": "Financials",
+      "url": "https://stockanalysis.com/stocks/sector/financials/",
+      "as_of": null
+    },
+    {
+      "sector": "Consumer staples",
+      "url": "https://stockanalysis.com/stocks/sector/consumer-staples/",
+      "as_of": null
+    },
+    {
+      "sector": "Consumer discretionary",
+      "url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/",
+      "as_of": null
+    },
+    {
+      "sector": "Industrials",
+      "url": "https://stockanalysis.com/stocks/sector/industrials/",
+      "as_of": null
+    },
+    {
+      "sector": "Energy",
+      "url": "https://stockanalysis.com/stocks/sector/energy/",
+      "as_of": null
+    },
+    {
+      "sector": "Utilities",
+      "url": "https://stockanalysis.com/stocks/sector/utilities/",
+      "as_of": null
+    },
+    {
+      "sector": "Real estate",
+      "url": "https://stockanalysis.com/stocks/sector/real-estate/",
+      "as_of": null
+    },
+    {
+      "sector": "Communication services",
+      "url": "https://stockanalysis.com/stocks/sector/communication-services/",
+      "as_of": null
+    }
+  ],
+  "stocks": [
+    {
+      "symbol": "NVDA",
+      "name": "NVIDIA Corporation",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 5650000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 4870000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "MSFT",
+      "name": "Microsoft Corporation",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 3840000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "TSM",
+      "name": "Taiwan Semiconductor Manufacturing Company Limited",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 2040000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "AVGO",
+      "name": "Broadcom Inc.",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 1700000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "MU",
+      "name": "Micron Technology, Inc.",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 1210000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "AMD",
+      "name": "Advanced Micro Devices, Inc.",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 1030000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "SKHY",
+      "name": "SK hynix Inc.",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 996350000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "ASML",
+      "name": "ASML Holding N.V.",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 714500000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "INTC",
+      "name": "Intel Corporation",
+      "sector": "IT / Technology",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 627020000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/technology/"
+    },
+    {
+      "symbol": "LLY",
+      "name": "Eli Lilly and Company",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 1020000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "JNJ",
+      "name": "Johnson & Johnson",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 617010000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "ABBV",
+      "name": "AbbVie Inc.",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 464430000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "MRK",
+      "name": "Merck & Co., Inc.",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 356010000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "UNH",
+      "name": "UnitedHealth Group Incorporated",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 333820000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "NVS",
+      "name": "Novartis AG",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 266660000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "AZN",
+      "name": "AstraZeneca PLC",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 243580000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "TMO",
+      "name": "Thermo Fisher Scientific Inc.",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 242110000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "AMGN",
+      "name": "Amgen Inc.",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 217900000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "GILD",
+      "name": "Gilead Sciences, Inc.",
+      "sector": "Healthcare",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 179470000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/healthcare/"
+    },
+    {
+      "symbol": "BRK-B",
+      "name": "Berkshire Hathaway Inc.",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 1080000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "JPM",
+      "name": "JPMorgan Chase & Co.",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 883530000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "V",
+      "name": "Visa Inc.",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 662030000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "MA",
+      "name": "Mastercard Incorporated",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 483790000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "BAC",
+      "name": "Bank of America Corporation",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 375860000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "HSBC",
+      "name": "HSBC Holdings plc",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 326570000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "MS",
+      "name": "Morgan Stanley",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 298890000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "GS",
+      "name": "The Goldman Sachs Group, Inc.",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 273260000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "RY",
+      "name": "Royal Bank of Canada",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 270870000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "MUFG",
+      "name": "Mitsubishi UFJ Financial Group, Inc.",
+      "sector": "Financials",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 252920000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/financials/"
+    },
+    {
+      "symbol": "WMT",
+      "name": "Walmart Inc.",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 827170000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "COST",
+      "name": "Costco Wholesale Corporation",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 408090000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "KO",
+      "name": "The Coca-Cola Company",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 368510000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "PG",
+      "name": "The Procter & Gamble Company",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 336580000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "PM",
+      "name": "Philip Morris International Inc.",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 292180000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "PEP",
+      "name": "PepsiCo, Inc.",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 171830000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "BUD",
+      "name": "Anheuser-Busch InBev SA/NV",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 143970000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "UL",
+      "name": "Unilever PLC",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 127730000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "BTI",
+      "name": "British American Tobacco p.l.c.",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 113040000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "MO",
+      "name": "Altria Group, Inc.",
+      "sector": "Consumer staples",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 112460000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-staples/"
+    },
+    {
+      "symbol": "AMZN",
+      "name": "Amazon.com, Inc.",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 2710000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "TSLA",
+      "name": "Tesla, Inc.",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 1460000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "HD",
+      "name": "The Home Depot, Inc.",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 282200000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "BABA",
+      "name": "Alibaba Group Holding Limited",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 263100000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "TM",
+      "name": "Toyota Motor Corporation",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 213960000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "MCD",
+      "name": "McDonald's Corporation",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 164090000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "TJX",
+      "name": "The TJX Companies, Inc.",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 145940000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "BKNG",
+      "name": "Booking Holdings Inc.",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 119480000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "SBUX",
+      "name": "Starbucks Corporation",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 107950000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "PDD",
+      "name": "PDD Holdings Inc.",
+      "sector": "Consumer discretionary",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 107300000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/consumer-discretionary/"
+    },
+    {
+      "symbol": "SPCX",
+      "name": "Space Exploration Technologies Corp.",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 2160000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "CAT",
+      "name": "Caterpillar Inc.",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 388620000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "GE",
+      "name": "GE Aerospace",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 321190000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "GEV",
+      "name": "GE Vernova Inc.",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 263320000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "RTX",
+      "name": "RTX Corporation",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 248900000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "DE",
+      "name": "Deere & Company",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 185230000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "ETN",
+      "name": "Eaton Corporation plc",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 169390000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "UNP",
+      "name": "Union Pacific Corporation",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 165320000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "BA",
+      "name": "The Boeing Company",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 152980000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "PH",
+      "name": "Parker-Hannifin Corporation",
+      "sector": "Industrials",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 122650000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/industrials/"
+    },
+    {
+      "symbol": "XOM",
+      "name": "ExxonMobil Holdings Corporation",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 674390000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "CVX",
+      "name": "Chevron Corporation",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 405440000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "SHEL",
+      "name": "Shell plc",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 272560000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "TTE",
+      "name": "TotalEnergies SE",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 186270000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "COP",
+      "name": "ConocoPhillips",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 152270000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "PBR",
+      "name": "Petróleo Brasileiro S.A. - Petrobras",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 133740000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "MPC",
+      "name": "Marathon Petroleum Corporation",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 118600000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "VLO",
+      "name": "Valero Energy Corporation",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 116980000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "BP",
+      "name": "BP p.l.c.",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 114040000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "PSX",
+      "name": "Phillips 66",
+      "sector": "Energy",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 105570000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/energy/"
+    },
+    {
+      "symbol": "NEE",
+      "name": "NextEra Energy, Inc.",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 160270000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "SO",
+      "name": "The Southern Company",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 96310000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "CEG",
+      "name": "Constellation Energy Corporation",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 91230000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "DUK",
+      "name": "Duke Energy Corporation",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 88990000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "NGG",
+      "name": "National Grid plc",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 75480000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "AEP",
+      "name": "American Electric Power Company, Inc.",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 65090000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "D",
+      "name": "Dominion Energy, Inc.",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 53920000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "SRE",
+      "name": "Sempra",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 51250000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "ETR",
+      "name": "Entergy Corporation",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 48210000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "VST",
+      "name": "Vistra Corp.",
+      "sector": "Utilities",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 47000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/utilities/"
+    },
+    {
+      "symbol": "WELL",
+      "name": "Welltower Inc.",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 164120000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "PLD",
+      "name": "Prologis, Inc.",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 124990000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "EQIX",
+      "name": "Equinix, Inc.",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 101210000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "SPG",
+      "name": "Simon Property Group, Inc.",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 76240000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "AMT",
+      "name": "American Tower Corporation",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 75580000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "DLR",
+      "name": "Digital Realty Trust, Inc.",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 67430000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "PSA",
+      "name": "Public Storage",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 55110000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "O",
+      "name": "Realty Income Corporation",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 51200000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "VMRK",
+      "name": "Vivmark Residential",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 46260000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "VTR",
+      "name": "Ventas, Inc.",
+      "sector": "Real estate",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 43380000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/real-estate/"
+    },
+    {
+      "symbol": "GOOGL",
+      "name": "Alphabet Inc.",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 1,
+      "market_cap_usd": 4200000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "META",
+      "name": "Meta Platforms, Inc.",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 2,
+      "market_cap_usd": 1850000000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "NFLX",
+      "name": "Netflix, Inc.",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 3,
+      "market_cap_usd": 279230000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "VZ",
+      "name": "Verizon Communications Inc.",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 4,
+      "market_cap_usd": 190790000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "DIS",
+      "name": "The Walt Disney Company",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 5,
+      "market_cap_usd": 176450000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "TMUS",
+      "name": "T-Mobile US, Inc.",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 6,
+      "market_cap_usd": 175530000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "T",
+      "name": "AT&T Inc.",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 7,
+      "market_cap_usd": 166510000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "SPOT",
+      "name": "Spotify Technology S.A.",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 8,
+      "market_cap_usd": 97220000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "APP",
+      "name": "AppLovin Corporation",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 9,
+      "market_cap_usd": 89760000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    },
+    {
+      "symbol": "WBD",
+      "name": "Warner Bros. Discovery, Inc.",
+      "sector": "Communication services",
+      "kind": "stock",
+      "rank": 10,
+      "market_cap_usd": 77680000000,
+      "source_url": "https://stockanalysis.com/stocks/sector/communication-services/"
+    }
+  ]
+}

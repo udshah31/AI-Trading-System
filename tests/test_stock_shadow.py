@@ -1,6 +1,6 @@
 """Stock shadow research persists separately and cannot reach order routing."""
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from hybrid.config import HybridConfig
-from hybrid.stock_shadow import StockShadow, enabled, stock_shadow_loop
+from hybrid.stock_shadow import RANKING, SECTORS, SYMBOLS, WATCHLIST, StockShadow, enabled, load_ranking, stock_shadow_loop
 from hybrid.storage import StockShadowDecision, StorageService, Signal, Trade
 from hybrid.technical_indicators import TechnicalSignals
 
@@ -49,6 +49,56 @@ def rows(storage, model=StockShadowDecision):
     return asyncio.run(read())
 
 
+def test_watchlist_has_ten_ranked_stocks_in_each_sector_plus_etfs():
+    stocks = [asset for asset in WATCHLIST if asset["kind"] == "stock"]
+    assert len(stocks) == 100
+    assert len(SYMBOLS) == len(set(SYMBOLS)) == 102
+    assert {asset["symbol"] for asset in WATCHLIST if asset["kind"] == "etf"} == {"SPY", "QQQ"}
+    for sector in SECTORS:
+        ranked = sorted((asset for asset in stocks if asset["sector"] == sector), key=lambda a: a["rank"])
+        assert [asset["rank"] for asset in ranked] == list(range(1, 11))
+        caps = [asset["market_cap_usd"] for asset in ranked]
+        assert caps == sorted(caps, reverse=True)
+        assert all(asset["source_url"].startswith("https://") for asset in ranked)
+    assert RANKING["retrieved_at"] and len(RANKING["sources"]) == 10
+
+
+@pytest.mark.parametrize("invalid", ["missing", "duplicate", "rank", "cap", "source"])
+def test_invalid_ranking_snapshot_rejected(tmp_path, invalid):
+    import copy
+    import json
+    data = copy.deepcopy(RANKING)
+    if invalid == "missing":
+        data["stocks"].pop()
+    elif invalid == "duplicate":
+        data["stocks"][1]["symbol"] = data["stocks"][0]["symbol"]
+    elif invalid == "rank":
+        data["stocks"][0]["rank"] = 0
+    elif invalid == "cap":
+        data["stocks"][0]["market_cap_usd"] = -1
+    else:
+        data["stocks"][0]["source_url"] = "javascript:alert(1)"
+    path = tmp_path / "ranking.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError):
+        load_ranking(path)
+
+
+def test_one_failed_symbol_does_not_block_other_sectors(storage):
+    def sometimes_bad(symbol, trade_date):
+        if symbol == "JNJ":
+            raise ConnectionError("offline")
+        return indicators(symbol, trade_date)
+    service = StockShadow(storage, HybridConfig(), Calendar([session()]), sometimes_bad)
+    now = datetime(2026, 11, 27, 22, tzinfo=timezone.utc)
+    assert asyncio.run(service.run_once(now)) == len(SYMBOLS) - 1
+    assert {row.symbol for row in rows(storage)} == set(SYMBOLS) - {"JNJ"}
+    assert rows(storage, Signal) == [] and rows(storage, Trade) == []
+    recovered = StockShadow(storage, HybridConfig(), Calendar([session()]), indicators)
+    assert asyncio.run(recovered.run_once(now)) == 1
+    assert len(rows(storage)) == len(SYMBOLS)
+
+
 def test_default_disabled_and_explicit_enable(monkeypatch):
     monkeypatch.delenv("STOCK_SHADOW_ENABLED", raising=False)
     assert not enabled()
@@ -60,13 +110,13 @@ def test_early_close_waits_for_settling_and_persists_once_per_session(storage):
     service = StockShadow(storage, HybridConfig(), Calendar([session()]), indicators)
     # NY is UTC-5 in November: early close 13:00 = 18:00 UTC.
     assert asyncio.run(service.run_once(datetime(2026, 11, 27, 18, 19, tzinfo=timezone.utc))) == 0
-    assert asyncio.run(service.run_once(datetime(2026, 11, 27, 18, 20, tzinfo=timezone.utc))) == 2
-    assert sorted(r.symbol for r in rows(storage)) == ["QQQ", "SPY"]
+    assert asyncio.run(service.run_once(datetime(2026, 11, 27, 18, 20, tzinfo=timezone.utc))) == len(SYMBOLS)
+    assert sorted(r.symbol for r in rows(storage)) == sorted(SYMBOLS)
     assert all(r.action == "buy" for r in rows(storage))
     # Restart uses persisted unique session keys, not an in-memory deduplication set.
     restarted = StockShadow(storage, HybridConfig(), Calendar([session()]), indicators)
     assert asyncio.run(restarted.run_once(datetime(2026, 11, 28, 15, tzinfo=timezone.utc))) == 0
-    assert len(rows(storage)) == 2
+    assert len(rows(storage)) == len(SYMBOLS)
     assert rows(storage, Signal) == [] and rows(storage, Trade) == []
 
 
@@ -77,6 +127,7 @@ def test_database_enforces_unique_symbol_session(storage):
     existing = rows(storage)[0]
     assert existing.features["buy_threshold"] == HybridConfig().buy_threshold
     assert existing.features["sell_threshold"] == HybridConfig().sell_threshold
+    assert existing.features["watchlist_retrieved_at"] == RANKING["retrieved_at"]
 
     async def duplicate():
         async with storage.db.session() as db:
@@ -87,7 +138,7 @@ def test_database_enforces_unique_symbol_session(storage):
                 close_price=existing.close_price, features=existing.features))
     with pytest.raises(IntegrityError):
         asyncio.run(duplicate())
-    assert len(rows(storage)) == 2
+    assert len(rows(storage)) == len(SYMBOLS)
 
 
 def test_empty_calendar_does_not_run_analysis(storage):
@@ -101,13 +152,13 @@ def test_empty_calendar_does_not_run_analysis(storage):
 def test_dst_close_conversion(storage):
     service = StockShadow(storage, HybridConfig(), Calendar([session("2026-07-01", "16:00")]), indicators)
     assert asyncio.run(service.run_once(datetime(2026, 7, 1, 20, 19, tzinfo=timezone.utc))) == 0
-    assert asyncio.run(service.run_once(datetime(2026, 7, 1, 20, 20, tzinfo=timezone.utc))) == 2
+    assert asyncio.run(service.run_once(datetime(2026, 7, 1, 20, 20, tzinfo=timezone.utc))) == len(SYMBOLS)
 
 
 def test_holiday_and_weekend_choose_last_completed_session(storage):
     calendar = Calendar([session("2026-11-25", "16:00")])
     service = StockShadow(storage, HybridConfig(), calendar, indicators)
-    assert asyncio.run(service.run_once(datetime(2026, 11, 26, 22, tzinfo=timezone.utc))) == 2
+    assert asyncio.run(service.run_once(datetime(2026, 11, 26, 22, tzinfo=timezone.utc))) == len(SYMBOLS)
     assert {r.session_date for r in rows(storage)} == {date(2026, 11, 25)}
 
 
@@ -161,6 +212,16 @@ def test_dashboard_shadow_is_authenticated_and_separate_from_crypto(storage, mon
     from hybrid.dashboard import app as dashboard
     service = StockShadow(storage, HybridConfig(), Calendar([session()]), indicators)
     asyncio.run(service.run_once(datetime(2026, 11, 27, 22, tzinfo=timezone.utc)))
+    # More than 60 newer SPY rows must not hide other sectors' older snapshots.
+    async def add_newer_spy_rows():
+        async with storage.db.session() as db:
+            for offset in range(1, 71):
+                db.add(StockShadowDecision(
+                    symbol="SPY", session_date=date(2026, 11, 27) + timedelta(days=offset),
+                    session_close=datetime(2026, 11, 27, 18, tzinfo=timezone.utc),
+                    analyzed_at=datetime(2026, 11, 27, 22, tzinfo=timezone.utc),
+                    action="hold", score=0.5, confidence=0, close_price=500, features={}))
+    asyncio.run(add_newer_spy_rows())
     monkeypatch.setattr(dashboard, "storage", storage)
     monkeypatch.setenv("DASHBOARD_PASSWORD", "pw")
     monkeypatch.setenv("STOCK_SHADOW_ENABLED", "true")
@@ -168,5 +229,12 @@ def test_dashboard_shadow_is_authenticated_and_separate_from_crypto(storage, mon
     assert client.get("/api/stocks/shadow").status_code == 401
     result = client.get("/api/stocks/shadow", auth=("admin", "pw")).json()
     assert result["mode"] == "shadow" and result["orders_enabled"] is False
-    assert len(result["decisions"]) == 2
+    assert len(result["decisions"]) == len(SYMBOLS)
+    assert result["watchlist"] == list(WATCHLIST)
+    assert result["sectors"] == list(SECTORS)
+    assert result["ranking"]["retrieved_at"] == RANKING["retrieved_at"]
+    assert {row["symbol"] for row in result["decisions"]} == set(SYMBOLS)
+    by_symbol = {row["symbol"]: row for row in result["decisions"]}
+    assert by_symbol["JNJ"]["session_date"] == "2026-11-27"
+    assert by_symbol["SPY"]["session_date"] == (date(2026, 11, 27) + timedelta(days=70)).isoformat()
     assert client.get("/api/decision-band", auth=("admin", "pw")).json()["coins"] == []

@@ -164,6 +164,11 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
 .stock-card dl div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
 .stock-card dt { color: var(--ink-2); }
 .stock-card dd { text-align: right; }
+.stock-browse { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.stock-browse select { font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); padding: 8px; max-width: 100%; }
+.stock-sector { margin-top: 20px; border-top: 1px solid var(--rule); padding-top: 12px; }
+.stock-sector summary { cursor: pointer; font-weight: 700; font-size: 18px; }
+.stock-card a { color: var(--blue); }
 .stock-guide { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--rule); }
 .stock-guide summary { cursor: pointer; font-weight: 700; }
 .stock-guide ul { margin: 12px 0 0 24px; max-width: 76ch; }
@@ -353,10 +358,16 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
   <section class="audit" id="stockResearch" aria-labelledby="stockShadowHead">
     <div class="section-head"><h2 id="stockShadowHead">Explore stocks</h2>
       <p><strong>Research only · no stock orders</strong></p></div>
-    <p class="stock-intro">Start with two exchange-traded funds (ETFs): baskets of stocks you can follow through a single symbol.
-      Shadow mode records what the strategy would suggest, without buying or selling anything. Your crypto trading continues separately.</p>
+    <p class="stock-intro">Explore the 10 largest US-listed companies by market capitalization in each of 10 sectors—100 stocks—plus SPY and QQQ exchange-traded funds (ETFs).
+      Market capitalization measures company size, not investment quality. This is a sourced ranking snapshot, not a recommendation to buy. Shadow mode records research without buying or selling anything.</p>
     <div id="stockShadowNote" class="stock-status" role="status" aria-live="polite">Loading stock research…</div>
-    <div id="stockShadowCards" class="stock-cards" aria-label="Stock research watchlist"></div>
+    <div class="stock-browse"><label for="stockSectorFilter">Browse a category</label>
+      <select id="stockSectorFilter"><option value="">All categories</option></select></div>
+    <p id="stockRankingNote" class="note"></p>
+    <p id="stockCoverage" class="note"></p>
+    <div id="stockShadowCards" aria-label="Stock research watchlist"></div>
+    <details class="stock-guide"><summary>Ranking sources and methodology</summary>
+      <p id="stockRankingMethod" class="note"></p></details>
     <details class="stock-guide">
       <summary>New here? How to read these cards</summary>
       <ul>
@@ -365,6 +376,8 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
         <li><strong>Session</strong> is the exchange trading day analyzed. Weekends and holidays do not produce a new session. Results use completed daily bars, at least 20 minutes after close.</li>
         <li><strong>Adjusted close</strong> is Yahoo's historical closing price adjusted for corporate actions, not a live quote or guaranteed fill price.</li>
         <li>This first version uses <strong>technical indicators only</strong>, not LLM research. Saved results are historical and can differ from today's market.</li>
+        <li><strong>Rank</strong> compares company market capitalization within its sector in the saved source snapshot. Rankings are not refreshed automatically, source quotes may be delayed, and US-listed foreign companies/ADRs may be included. A company appears only once, even if it has multiple share classes.</li>
+        <li>Sector labels follow the source classification; a company may operate in several industries. The ten categories here do not include the materials sector. ETF holdings can overlap with the stock watchlist.</li>
         <li>Enabling research requires the operator to configure <code>STOCK_SHADOW_ENABLED=true</code> with Alpaca calendar access and database storage. It never enables stock trading.</li>
       </ul>
     </details>
@@ -849,7 +862,9 @@ function onMessage(msg) {
   }
 }
 
+let stockShadowState = null;
 function renderStockShadow(state) {
+  stockShadowState = state;
   const note = $('stockShadowNote');
   note.className = 'stock-status';
   note.textContent = !state.enabled
@@ -857,13 +872,27 @@ function renderStockShadow(state) {
     : state.decisions.length
       ? 'Research is configured. Results below are saved session snapshots, not live prices. No stock orders are enabled.'
       : 'Waiting for the first result. Research needs a completed exchange session, calendar access and valid daily bars. If this persists, ask the operator to check the bot logs.';
-  const names = { SPY: 'S&P 500 ETF · broad US large-company exposure', QQQ: 'Nasdaq-100 ETF · concentrated in large non-financial companies' };
   const signals = { buy: 'Leaning toward buying', sell: 'Leaning toward selling', hold: 'Waiting / no clear signal' };
-  $('stockShadowCards').innerHTML = ['SPY', 'QQQ'].map((symbol) => {
+  const watchlist = state.watchlist || state.symbols.map((symbol) => ({ symbol, name: symbol, sector: 'Research watchlist', kind: 'stock' }));
+  const filter = $('stockSectorFilter');
+  const selected = filter.value || '';
+  const sectors = [...new Set(watchlist.map((asset) => asset.kind === 'etf' ? 'ETF benchmarks' : asset.sector))];
+  filter.innerHTML = '<option value="">All categories</option>' + sectors.map((sector) =>
+    `<option value="${esc(sector)}">${esc(sector)}</option>`).join('');
+  filter.value = sectors.includes(selected) ? selected : '';
+  const visible = watchlist.filter((asset) => !filter.value || (asset.kind === 'etf' ? 'ETF benchmarks' : asset.sector) === filter.value);
+  const saved = visible.filter((asset) => state.decisions.some((d) => d.symbol === asset.symbol)).length;
+  $('stockCoverage').textContent = `${saved} of ${visible.length} displayed symbols have a saved research result. Missing symbols are waiting for valid data; each card shows its own session date.`;
+  $('stockRankingNote').textContent = state.ranking
+    ? `Ranking snapshot retrieved ${new Date(state.ranking.retrieved_at).toLocaleDateString()}. Source: Stock Analysis. Not automatically re-ranked; source quotes may be delayed and valuation timestamps are not supplied.`
+    : 'Ranking source metadata unavailable.';
+  $('stockRankingMethod').textContent = state.ranking ? state.ranking.method : 'No ranking methodology supplied.';
+  const card = (asset) => {
+    const symbol = asset.symbol;
     const d = state.decisions.find((item) => item.symbol === symbol);
     const threshold = `Current thresholds: buy ≥ ${Number(state.buy_threshold).toFixed(2)} · sell ≤ ${Number(state.sell_threshold).toFixed(2)}`;
-    return `<article class="stock-card" aria-label="${symbol} research"><h3>${symbol}</h3>
-      <p class="stock-name">${names[symbol]}</p>
+    return `<article class="stock-card" aria-label="${esc(symbol)} research"><h3>${esc(symbol)}</h3>
+      <p class="stock-name">${esc(asset.name)} · ${esc(asset.sector)} · ${asset.kind === 'etf' ? 'ETF' : 'Stock'}</p>
       <p class="stock-signal">${d ? esc(signals[d.action] || 'Unknown signal') : 'No saved result yet'}</p>
       <p class="note">${state.enabled ? 'Shadow research only' : 'Research disabled'} · no order placed by this feature</p>
       ${d ? `<dl><div><dt>Signal score</dt><dd>${Number(d.score).toFixed(3)} / 1</dd></div>
@@ -871,7 +900,18 @@ function renderStockShadow(state) {
         <div><dt>Adjusted close</dt><dd>${money(d.close_price)}</dd></div>
         <div><dt>Analysis recorded</dt><dd>${esc(new Date(d.analyzed_at).toLocaleString())}</dd></div></dl>`
         : '<p class="note">A completed daily-bar result will appear here after research runs successfully.</p>'}
-      <p class="note">${esc(threshold)}</p></article>`;
+      <p class="note">${esc(threshold)}</p>
+      ${asset.kind === 'stock' && Number.isFinite(asset.market_cap_usd)
+        ? `<p class="note">Sector rank #${Number(asset.rank)} · market cap ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2 }).format(asset.market_cap_usd)}</p>` : ''}
+      ${typeof asset.source_url === 'string' && asset.source_url.startsWith('https://')
+        ? `<a class="note" href="${esc(asset.source_url)}" target="_blank" rel="noopener noreferrer">Ranking source</a>` : ''}</article>`;
+  };
+  const groups = filter.value ? [filter.value] : sectors;
+  $('stockShadowCards').innerHTML = groups.map((sector) => {
+    const assets = visible.filter((asset) => (asset.kind === 'etf' ? 'ETF benchmarks' : asset.sector) === sector);
+    return `<details class="stock-sector" ${filter.value || sector === 'ETF benchmarks' ? 'open' : ''}>
+      <summary>${esc(sector)} · ${assets.length} ${sector === 'ETF benchmarks' ? 'ETFs' : 'stocks'}</summary>
+      <div class="stock-cards">${assets.map(card).join('')}</div></details>`;
   }).join('');
 }
 
@@ -901,6 +941,9 @@ async function refresh() {
   results.filter((r) => r.status === 'rejected').forEach((r) => log(`Could not load ${r.reason.message}`, 'Dashboard', 'error'));
 }
 document.addEventListener('DOMContentLoaded', async () => {
+  $('stockSectorFilter').addEventListener('change', () => {
+    if (stockShadowState) renderStockShadow(stockShadowState);
+  });
   connect();
   await refresh();
   api('/api/sniper/alerts').then((l) => l.slice(0, 12).reverse().forEach(addSniperAlert)).catch(() => {});

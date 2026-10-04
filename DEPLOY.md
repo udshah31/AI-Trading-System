@@ -79,16 +79,41 @@ TradingAgents itself is omitted from the constraints because its source is pinne
 its dependencies are included. Cross-platform resolution is not a substitute for building
 and testing on the target OS. Only deploy after the CI checks and the deployment checks pass.
 
-## Optional stock shadow research (SPY / QQQ)
+## Optional stock shadow research (top ten per sector plus ETFs)
+
+The watchlist includes SPY/QQQ plus **100 individual stocks**: ten US-listed companies
+ranked by market capitalization within each of these ten categories: IT/technology,
+healthcare, financials, consumer staples, consumer discretionary, industrials, energy,
+utilities, real estate and communication services. Materials is not included in these
+previously selected categories. Market capitalization measures size, not investment quality.
+This is not a recommendation, predicted-return ranking, or sector-balanced portfolio.
+ETF holdings can overlap with the individual companies.
+
+The reviewed snapshot is `hybrid/stock_watchlist.json`. It includes names, source-sector
+classification, numeric market caps, per-sector ranks, source URLs, retrieval timestamp,
+and selection methodology (including US-listed foreign companies/ADRs and single-share-class
+handling). Source quotes may be delayed; retrieval time does not imply all values share
+that valuation timestamp. The snapshot **does not automatically re-rank**. Updating it
+requires a reviewed data change and deployment. The loader verifies ten companies per sector,
+unique tickers, contiguous ranks and descending positive market caps.
+
+The dashboard groups results into expandable categories and provides a category selector.
+Cards include source links and market-cap ranks; ranking retrieval and research session dates
+are separate. Coverage counts show how many displayed symbols have a saved result.
+Price-data failures do not replace the sourced ranking with guessed alternatives.
+Existing results are retained; the latest saved row is selected independently per symbol.
 
 Stock shadow research is **off by default**. Enable it with `STOCK_SHADOW_ENABLED=true`
 in the deployment `.env`. It requires `BROKER=alpaca`, valid Alpaca paper credentials for
 calendar access, and working database storage. Set the flag for both application services
 (the Compose file already forwards it to the bot and dashboard).
 
+A failed stock-data request is skipped without blocking the other sectors, and retried
+on a later check. The dashboard shows the latest saved snapshot for each symbol independently.
+
 The bot checks every five minutes and selects the latest exchange session that closed at
 least 20 minutes ago. Alpaca's calendar supplies holidays, early closes and exchange-local
-session times; timezone conversion handles daylight saving. Each SPY/QQQ session is saved
+session times; timezone conversion handles daylight saving. Each symbol/session is saved
 once in `stock_shadow_decisions`, with a database uniqueness constraint that survives
 restarts. On first enable/startup it can catch up the last completed session.
 

@@ -1043,18 +1043,26 @@ async def decision_band():
 # --- Stocks: separate research-only ledger (not trade signals) ---
 @app.get("/api/stocks/shadow")
 async def stock_shadow_state():
-    from sqlalchemy import select
-    from hybrid.stock_shadow import SYMBOLS, enabled
+    from sqlalchemy import func, select
+    from hybrid.stock_shadow import RANKING, SECTORS, SYMBOLS, WATCHLIST, enabled
     from hybrid.storage import StockShadowDecision
 
+    # Select the latest row for each symbol independently. A stale symbol must not
+    # disappear when other symbols accumulate more than 60 recent rows.
+    latest_sessions = (select(StockShadowDecision.symbol,
+                              func.max(StockShadowDecision.session_date).label("session_date"))
+                       .where(StockShadowDecision.symbol.in_(SYMBOLS))
+                       .group_by(StockShadowDecision.symbol).subquery())
     async with _db().db.session() as session:
-        result = await session.execute(select(StockShadowDecision)
-                                       .order_by(StockShadowDecision.session_date.desc()).limit(60))
-        latest = {}
-        for row in result.scalars():
-            latest.setdefault(row.symbol, row)
+        result = await session.execute(select(StockShadowDecision).join(
+            latest_sessions,
+            (StockShadowDecision.symbol == latest_sessions.c.symbol)
+            & (StockShadowDecision.session_date == latest_sessions.c.session_date)))
+        latest = {row.symbol: row for row in result.scalars()}
     config = HybridConfig()
     return {"mode": "shadow", "enabled": enabled(), "symbols": list(SYMBOLS),
+            "watchlist": list(WATCHLIST), "sectors": list(SECTORS),
+            "ranking": {key: RANKING[key] for key in ("retrieved_at", "method", "sources")},
             "buy_threshold": config.buy_threshold, "sell_threshold": config.sell_threshold,
             "orders_enabled": False, "source": "technical-only, completed daily bars",
             "decisions": [{"symbol": r.symbol, "session_date": r.session_date.isoformat(),
