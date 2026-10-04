@@ -70,6 +70,7 @@ class PaperTradingSystem:
         self.kraken_futures = None
         self.broker_name = broker_choice()
         self.storage = None
+        self.stock_shadow = None
         self.running = False
     
     async def initialize(self):
@@ -119,6 +120,13 @@ class PaperTradingSystem:
             self.agents['orchestrator'] = Orchestrator(
                 self.bus, self.config, exchange=None if dry_run else self.kraken_spot,
                 store=RedisHoldingsStore(self.bus.client, holdings_key(dry_run)))
+        from hybrid.stock_shadow import StockShadow, enabled as stock_shadow_enabled
+        if stock_shadow_enabled():
+            if self.storage and broker is not None:
+                self.stock_shadow = StockShadow(self.storage, self.config, broker.client)
+                print("[StockShadow] SPY/QQQ research enabled — no stock orders")
+            else:
+                print("[StockShadow] Disabled: requires PostgreSQL and BROKER=alpaca")
         await self._init_remaining_agents()
 
     async def _init_kraken(self, dry_run: bool):
@@ -199,6 +207,10 @@ class PaperTradingSystem:
         self.background_tasks.extend([analysis_task, llm_task, heartbeat_task, equity_snapshot_task,
                                       reconciliation_task, learning_task])
         
+        if self.stock_shadow is not None:
+            from hybrid.stock_shadow import stock_shadow_loop
+            self.background_tasks.append(asyncio.create_task(stock_shadow_loop(self.stock_shadow)))
+
         try:
             # Wait for shutdown signal
             while self.running:

@@ -1040,6 +1040,30 @@ async def decision_band():
     }
 
 
+# --- Stocks: separate research-only ledger (not trade signals) ---
+@app.get("/api/stocks/shadow")
+async def stock_shadow_state():
+    from sqlalchemy import select
+    from hybrid.stock_shadow import SYMBOLS, enabled
+    from hybrid.storage import StockShadowDecision
+
+    async with _db().db.session() as session:
+        result = await session.execute(select(StockShadowDecision)
+                                       .order_by(StockShadowDecision.session_date.desc()).limit(60))
+        latest = {}
+        for row in result.scalars():
+            latest.setdefault(row.symbol, row)
+    config = HybridConfig()
+    return {"mode": "shadow", "enabled": enabled(), "symbols": list(SYMBOLS),
+            "buy_threshold": config.buy_threshold, "sell_threshold": config.sell_threshold,
+            "orders_enabled": False, "source": "technical-only, completed daily bars",
+            "decisions": [{"symbol": r.symbol, "session_date": r.session_date.isoformat(),
+                           "session_close": r.session_close.isoformat(),
+                           "analyzed_at": r.analyzed_at.isoformat(), "action": r.action,
+                           "score": float(r.score), "confidence": float(r.confidence),
+                           "close_price": float(r.close_price)} for r in latest.values()]}
+
+
 # --- Learning loop: outcomes, re-fit proposals, approval ---
 def _proposal_json(p) -> dict:
     return {"id": p.id, "status": p.status, "created_at": p.created_at.isoformat(),

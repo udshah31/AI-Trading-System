@@ -80,6 +80,7 @@ services:
       - DASHBOARD_USER=${DASHBOARD_USER:-admin}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:?set DASHBOARD_PASSWORD in .env}
       - DASHBOARD_CORS_ORIGINS=${DASHBOARD_CORS_ORIGINS:-}
+      - STOCK_SHADOW_ENABLED=${STOCK_SHADOW_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,6 +103,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://trader:${DB_PASSWORD:-secret}@postgres:5432/trading
       - LIVE_TRADING=${LIVE_TRADING:-false}
       - BROKER=${BROKER:-alpaca}
+      - STOCK_SHADOW_ENABLED=${STOCK_SHADOW_ENABLED:-false}
       - ENABLE_SNIPER=${ENABLE_SNIPER:-false}
       - KRAKEN_API_KEY=${KRAKEN_API_KEY}
       - KRAKEN_API_SECRET=${KRAKEN_API_SECRET}

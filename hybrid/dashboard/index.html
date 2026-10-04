@@ -151,6 +151,30 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
 .list li.down span:first-child { color: var(--red); }
 .note { font-size: 14px; color: var(--ink-2); padding: 8px 0; }
 
+/* Stocks: beginner-friendly research cards, separate from the trading ledger. */
+.stock-intro { max-width: 76ch; margin: 12px 0; }
+.stock-status { border-left: 3px solid var(--rule); padding: 12px 16px; background: var(--paper-2); }
+.stock-status.error { border-color: var(--red); }
+.stock-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 20px; }
+.stock-card { border: 1px solid var(--rule); padding: 20px; min-width: 0; }
+.stock-card h3 { font-size: 21px; }
+.stock-card .stock-name { font-size: 14px; color: var(--ink-2); margin: 4px 0 16px; }
+.stock-card .stock-signal { font-size: 21px; font-weight: 700; }
+.stock-card dl { margin-top: 16px; }
+.stock-card dl div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+.stock-card dt { color: var(--ink-2); }
+.stock-card dd { text-align: right; }
+.stock-guide { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.stock-guide summary { cursor: pointer; font-weight: 700; }
+.stock-guide ul { margin: 12px 0 0 24px; max-width: 76ch; }
+.stock-guide li + li { margin-top: 8px; }
+@media (max-width: 600px) {
+  .stock-cards { grid-template-columns: minmax(0, 1fr); }
+  #stockResearch .section-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .stock-card dl div { flex-wrap: wrap; }
+  .stock-card dd { margin-left: auto; overflow-wrap: anywhere; }
+}
+
 /* ── Audit: LLM readings vs your labels ── */
 .audit { margin-top: 48px; padding-top: 28px; border-top: 3px double var(--ink); }
 .audit-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 32px; margin-top: 16px; }
@@ -325,6 +349,26 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
       </section>
     </aside>
   </div>
+
+  <section class="audit" id="stockResearch" aria-labelledby="stockShadowHead">
+    <div class="section-head"><h2 id="stockShadowHead">Explore stocks</h2>
+      <p><strong>Research only · no stock orders</strong></p></div>
+    <p class="stock-intro">Start with two exchange-traded funds (ETFs): baskets of stocks you can follow through a single symbol.
+      Shadow mode records what the strategy would suggest, without buying or selling anything. Your crypto trading continues separately.</p>
+    <div id="stockShadowNote" class="stock-status" role="status" aria-live="polite">Loading stock research…</div>
+    <div id="stockShadowCards" class="stock-cards" aria-label="Stock research watchlist"></div>
+    <details class="stock-guide">
+      <summary>New here? How to read these cards</summary>
+      <ul>
+        <li><strong>Leaning toward buying / selling / waiting</strong> describes a technical research signal—not an order, a profit forecast, or personal financial advice.</li>
+        <li><strong>Signal score</strong> runs from 0 (bearish) to 1 (bullish). It is not a probability of making money. Thresholds come from the strategy configuration.</li>
+        <li><strong>Session</strong> is the exchange trading day analyzed. Weekends and holidays do not produce a new session. Results use completed daily bars, at least 20 minutes after close.</li>
+        <li><strong>Adjusted close</strong> is Yahoo's historical closing price adjusted for corporate actions, not a live quote or guaranteed fill price.</li>
+        <li>This first version uses <strong>technical indicators only</strong>, not LLM research. Saved results are historical and can differ from today's market.</li>
+        <li>Enabling research requires the operator to configure <code>STOCK_SHADOW_ENABLED=true</code> with Alpaca calendar access and database storage. It never enables stock trading.</li>
+      </ul>
+    </details>
+  </section>
 
   <!-- Audit: how the LLM reports were read, and whether you agree -->
   <section class="audit" aria-labelledby="auditHead">
@@ -805,10 +849,47 @@ function onMessage(msg) {
   }
 }
 
+function renderStockShadow(state) {
+  const note = $('stockShadowNote');
+  note.className = 'stock-status';
+  note.textContent = !state.enabled
+    ? 'Research is off. No stock orders are enabled. Any saved results below are historical.'
+    : state.decisions.length
+      ? 'Research is configured. Results below are saved session snapshots, not live prices. No stock orders are enabled.'
+      : 'Waiting for the first result. Research needs a completed exchange session, calendar access and valid daily bars. If this persists, ask the operator to check the bot logs.';
+  const names = { SPY: 'S&P 500 ETF · broad US large-company exposure', QQQ: 'Nasdaq-100 ETF · concentrated in large non-financial companies' };
+  const signals = { buy: 'Leaning toward buying', sell: 'Leaning toward selling', hold: 'Waiting / no clear signal' };
+  $('stockShadowCards').innerHTML = ['SPY', 'QQQ'].map((symbol) => {
+    const d = state.decisions.find((item) => item.symbol === symbol);
+    const threshold = `Current thresholds: buy ≥ ${Number(state.buy_threshold).toFixed(2)} · sell ≤ ${Number(state.sell_threshold).toFixed(2)}`;
+    return `<article class="stock-card" aria-label="${symbol} research"><h3>${symbol}</h3>
+      <p class="stock-name">${names[symbol]}</p>
+      <p class="stock-signal">${d ? esc(signals[d.action] || 'Unknown signal') : 'No saved result yet'}</p>
+      <p class="note">${state.enabled ? 'Shadow research only' : 'Research disabled'} · no order placed by this feature</p>
+      ${d ? `<dl><div><dt>Signal score</dt><dd>${Number(d.score).toFixed(3)} / 1</dd></div>
+        <div><dt>Session</dt><dd>${esc(d.session_date)}</dd></div>
+        <div><dt>Adjusted close</dt><dd>${money(d.close_price)}</dd></div>
+        <div><dt>Analysis recorded</dt><dd>${esc(new Date(d.analyzed_at).toLocaleString())}</dd></div></dl>`
+        : '<p class="note">A completed daily-bar result will appear here after research runs successfully.</p>'}
+      <p class="note">${esc(threshold)}</p></article>`;
+  }).join('');
+}
+
+async function loadStockShadow() {
+  try {
+    renderStockShadow(await api('/api/stocks/shadow'));
+  } catch (error) {
+    $('stockShadowNote').className = 'stock-status error';
+    $('stockShadowNote').textContent = 'Stock research could not be refreshed. Any cards shown are previously loaded snapshots, not current status. Stock order submission is not part of this feature.';
+    throw error;
+  }
+}
+
 // ── Start ──
 async function refresh() {
   const tasks = [
     loadBand(),
+    loadStockShadow(),
     api('/api/positions').then(renderPositions),
     api('/api/trades?limit=12').then(renderTrades),
     api('/api/equity/history?days=30').then(renderBalance),
@@ -826,6 +907,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadRuns().then(loadAccuracy).catch((e) => log(`Could not load the audit: ${e.message}`, 'Audit', 'error'));
   loadLearning().catch((e) => log(`Could not load indicator weights: ${e.message}`, 'Learning', 'error'));
   setInterval(() => loadLearning().catch(() => {}), 300000);
+  setInterval(() => loadStockShadow().catch(() => {}), 300000);
   setInterval(renderSchedule, 15000);
   window.addEventListener('resize', () => renderBand());
   setInterval(() => { loadBand().catch(() => {}); api('/api/agents').then(renderAgents).catch(() => {}); }, 30000);
