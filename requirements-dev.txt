@@ -1,0 +1,13 @@
+# Complete local/CI environment. Run from the repository root after initializing submodules.
+# Use with: python -m pip install -c constraints.txt -r requirements-dev.txt
+-r requirements.txt
+-r requirements-dex.txt
+-e ./TradingAgents
+
+# Tests and CI checks
+pytest
+pytest-asyncio
+pytest-xprocess
+aiosqlite
+ruff
+mypy

@@ -120,9 +120,10 @@ class AlpacaBroker:
                 return []  # never reached Alpaca
             raise
         report = _report(order)
-        return [{"status": "open" if report.status == "open" else "closed",
+        return [{"status": report.status,
                  "side": getattr(order.side, "value", str(order.side)).lower(),
-                 "vol_exec": report.filled_volume}]
+                 "vol_exec": report.filled_volume,
+                 "avg_price": report.avg_price}]
 
     async def close(self) -> None:
         return None

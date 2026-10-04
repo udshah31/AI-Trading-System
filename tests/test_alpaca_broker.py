@@ -114,7 +114,8 @@ def test_find_orders_by_client_id():
     client = FakeAlpaca(fills=[_order("filled", "0.05", "84000", side="sell")])
     broker = _broker(client)
     run(broker.submit_market("BTC/USDT", "sell", 0.05, "cid-9"))
-    assert run(broker.find_orders("cid-9")) == [{"status": "closed", "side": "sell", "vol_exec": 0.05}]
+    assert run(broker.find_orders("cid-9")) == [{"status": "filled", "side": "sell", "vol_exec": 0.05,
+                                                   "avg_price": 84000.0}]
     assert run(broker.find_orders("never-sent")) == []
 
 
@@ -188,6 +189,36 @@ def test_orchestrator_keeps_an_open_order_pending():
     assert orch.holdings == {} and len(orch.pending) == 1  # not lost, not assumed filled
     _approve_buy(orch)
     assert len(bus.of_type("execute_order")) == 1  # the coin stays blocked while it's unresolved
+
+
+def test_orchestrator_reconciles_delayed_fill_without_restart():
+    client = FakeAlpaca(fills=[_order("new")])
+    bus, orch = _orch_with(_broker(client))
+    _approve_buy(orch)
+    order = bus.of_type("execute_order")[-1]
+    _result(orch, bus, success=False, status="open", filled_volume=0.0, avg_price=None)
+    client.by_client_id[order["client_order_id"]] = _order("filled", "0.02", "84123.45")
+
+    run(orch.reconcile_pending_orders())
+    assert orch.pending == {}
+    assert orch.holdings["BTC/USDT"] == pytest.approx(0.02)
+    assert orch.portfolio.positions["BTC/USDT"]["avg_price"] == pytest.approx(84123.45)
+
+    # A second reconciliation cannot book the same broker fill twice.
+    run(orch.reconcile_pending_orders())
+    assert orch.portfolio.positions["BTC/USDT"]["volume"] == pytest.approx(0.02)
+
+
+def test_orchestrator_reconciles_terminal_partial_fill():
+    client = FakeAlpaca(fills=[_order("canceled", "0.02", "84123.45")])
+    bus, orch = _orch_with(_broker(client))
+    _approve_buy(orch, shares=0.05)
+    order = bus.of_type("execute_order")[-1]
+    _result(orch, bus, success=False, status="open", filled_volume=0.0, avg_price=None)
+    client.by_client_id[order["client_order_id"]] = client.fills[0]
+    run(orch.reconcile_pending_orders())
+    assert orch.holdings["BTC/USDT"] == pytest.approx(0.02)
+    assert orch.pending == {}
 
 
 def test_orchestrator_uses_alpaca_for_live_balance_checks():

@@ -123,7 +123,7 @@ def main():
     # ── Run Analysis ──
     if args.quant_only:
         print("\n🔬 Running QUANT-ONLY mode (no LLM, zero API cost)\n")
-        result = pipeline.analyze_quant_only(args.ticker, args.date)
+        result = pipeline.analyze_quant_only(args.ticker, args.date, asset_type=args.asset)
     else:
         print("\n🧬 Running FULL HYBRID mode (LLM + Quant)\n")
         result = pipeline.analyze(

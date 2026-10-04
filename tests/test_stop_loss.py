@@ -191,7 +191,8 @@ def test_stop_restored_for_a_buy_that_filled_during_a_crash():
     redis = FakeRedis()
     key = "orchestrator:holdings:live"
     redis.hashes[f"{key}:pending"] = {"cid1": json.dumps(
-        {"ticker": "BTC/USDT", "side": "buy", "volume": 0.05, "userref": 42, "stop": 80000.0})}
+        {"ticker": "BTC/USDT", "side": "buy", "volume": 0.05, "userref": 42,
+         "stop": 80000.0, "price": 84000.0})}
 
     class Filled(FakeKraken):
         async def find_orders_by_userref(self, userref):

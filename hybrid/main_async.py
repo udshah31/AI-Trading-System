@@ -38,6 +38,7 @@ DATABASE_URL = os.getenv(
 )
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 ANALYSIS_INTERVAL_S = 300
+ORDER_RECONCILE_INTERVAL_S = 15
 LEARNING_INTERVAL_S = 24 * 3600
 
 
@@ -194,8 +195,9 @@ class PaperTradingSystem:
         learning_task = asyncio.create_task(self._learning_loop())
         heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         equity_snapshot_task = asyncio.create_task(self._equity_snapshot_loop())
+        reconciliation_task = asyncio.create_task(self._order_reconciliation_loop())
         self.background_tasks.extend([analysis_task, llm_task, heartbeat_task, equity_snapshot_task,
-                                      learning_task])
+                                      reconciliation_task, learning_task])
         
         try:
             # Wait for shutdown signal
@@ -273,6 +275,17 @@ class PaperTradingSystem:
                     print(f"[Learning] Cycle failed: {e}")
             await asyncio.sleep(LEARNING_INTERVAL_S)
     
+    async def _order_reconciliation_loop(self):
+        """Recheck unresolved broker orders without requiring a process restart."""
+        while self.running:
+            await asyncio.sleep(ORDER_RECONCILE_INTERVAL_S)
+            orchestrator = self.agents.get("orchestrator")
+            if orchestrator:
+                try:
+                    await orchestrator.reconcile_pending_orders()
+                except Exception as e:
+                    print(f"[Reconciliation] Error: {e}")
+
     async def _equity_snapshot_loop(self):
         """Publish equity history snapshots to the dashboard every 60s"""
         while self.running:
