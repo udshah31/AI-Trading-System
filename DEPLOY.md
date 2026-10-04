@@ -9,6 +9,76 @@ health-checks. There is only ever one bot. Its positions survive restarts (Redis
 Only SSH (port 22) is open to the internet. You reach the dashboard and Grafana through an
 SSH tunnel, so the basic-auth password never crosses the internet unencrypted.
 
+## Local development and CI checks
+
+Use **Python 3.11** (`.python-version`), matching the container images and CI. Run these
+commands from the repository root. They install dependencies and run mocked/local tests;
+they do **not** start a trading process or require broker/LLM credentials.
+
+### Create the isolated environment
+
+With `uv` installed:
+
+```bash
+git submodule update --init --recursive TradingAgents
+# Downloads a uv-managed Python 3.11 if missing; does not change the global interpreter.
+uv venv --python 3.11 --managed-python .venv
+uv pip install --python .venv/bin/python -c constraints.txt -r requirements-dev.txt
+uv pip check --python .venv/bin/python
+```
+
+Alternatively, if Python 3.11 is already installed, use standard `venv` and `pip` in a
+fresh checkout instead of the `uv` commands:
+
+```bash
+git submodule update --init --recursive TradingAgents
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -c constraints.txt -r requirements-dev.txt
+.venv/bin/python -m pip check
+```
+
+`TradingAgents` is installed in editable mode from the **commit pinned by the Git
+submodule**, not from a global installation or the latest upstream branch. Do not use
+`git submodule update --remote` for normal setup. The `.venv` and check caches are ignored
+by Git. Activate it with `source .venv/bin/activate`, or use the explicit paths below.
+
+### Run the same checks as CI
+
+```bash
+.venv/bin/python -m pytest tests/ -v -p no:anchorpy -q
+.venv/bin/python -m ruff check hybrid/ --select=E9,F63,F7,F82
+.venv/bin/python -m mypy hybrid/ --ignore-missing-imports
+```
+
+Keep `-p no:anchorpy`: the installed AnchorPy package registers a pytest plugin that
+these tests do not use. A missing `alpaca-py` silently skips the broker test module;
+the complete development requirements include it, so that module should run.
+
+These checks do not verify live broker behavior, LLM API calls, or a deployed stack.
+Building/running the Compose stack additionally requires Docker Engine and the **Docker
+Compose plugin** (`docker compose version`); the Python environment does not provide those.
+
+### Dependency versions
+
+- `requirements.txt` and `requirements-dex.txt` declare runtime dependencies.
+- `requirements-dev.txt` adds the pinned submodule and all test/lint/typecheck tools.
+- `constraints.txt` pins resolved dependency versions, including platform markers.
+  Local setup, both CI workflows, and both Dockerfiles use these constraints. A constraint
+  does not install an otherwise-unused package, so containers do not gain the dev tools.
+
+For an intentional dependency update, regenerate the constraints and rerun all checks:
+
+```bash
+uv pip compile requirements-dev.txt --python-version 3.11 --universal \
+  --no-emit-package tradingagents --output-file constraints.txt
+uv pip install --python .venv/bin/python -c constraints.txt -r requirements-dev.txt
+uv pip check --python .venv/bin/python
+```
+
+TradingAgents itself is omitted from the constraints because its source is pinned by Git;
+its dependencies are included. Cross-platform resolution is not a substitute for building
+and testing on the target OS. Only deploy after the CI checks and the deployment checks pass.
+
 ## 1. Create the VM (once)
 
 1. OCI Console → Compute → Instances → **Create instance**.
