@@ -1,10 +1,12 @@
 # Deploying to Oracle Cloud (Always Free)
 
 The whole stack (dashboard, trading system, Postgres, Redis, Prometheus, Grafana) runs with
-`docker compose` on **one Always Free Ampere A1 VM**. On every push to `main` that passes
-tests, CI waits for your approval, then SSHes in and runs [`scripts/deploy.sh`](scripts/deploy.sh):
-it checks out that exact commit, rebuilds on the VM (native ARM), restarts in place and
-health-checks. There is only ever one bot. Its positions survive restarts (Redis AOF).
+`docker compose` on **one Always Free Ampere A1 VM**. On every push to `main`, the single CI
+runner runs the tests, lint and type check, then—if those pass—SSHes in and runs
+[`scripts/deploy.sh`](scripts/deploy.sh): it checks out that exact commit, rebuilds on the VM
+(native ARM), restarts in place and health-checks. Keeping deployment in the same job avoids
+waiting for a second GitHub-hosted runner. There is only ever one bot. Its positions survive
+restarts (Redis AOF).
 
 Only SSH (port 22) is open to the internet. You reach the dashboard and Grafana through an
 SSH tunnel, so the basic-auth password never crosses the internet unencrypted.
@@ -174,10 +176,10 @@ ssh-copy-id -i deploy_key.pub ubuntu@<vm-ip>
 ssh-keyscan -H <vm-ip>                            # output -> DEPLOY_KNOWN_HOSTS
 ```
 
-In GitHub, add the secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` (the contents of
-`deploy_key`) and `DEPLOY_KNOWN_HOSTS`. Then create the `production` environment with yourself as
-required reviewer. Details are in [.github/SECRETS.md](.github/SECRETS.md). Delete the local
-`deploy_key` once it's saved in GitHub.
+In GitHub, add the repository secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` (the
+contents of `deploy_key`) and `DEPLOY_KNOWN_HOSTS`. Details are in
+[.github/SECRETS.md](.github/SECRETS.md). Delete the local `deploy_key` once it's saved in
+GitHub. The deployment command runs only on pushes to `main`, after all checks pass.
 
 ## Using it
 

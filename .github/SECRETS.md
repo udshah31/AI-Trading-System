@@ -13,13 +13,9 @@ Grafana passwords, `LIVE_TRADING`) live in the VM's `.env` and are **never** sto
 | `DEPLOY_SSH_KEY` | Private key of a key pair used **only** for deploys; its public key is in the VM's `~/.ssh/authorized_keys` |
 | `DEPLOY_KNOWN_HOSTS` | The VM's host key, from `ssh-keyscan -H <host>`; CI refuses to deploy to any other host |
 
-Without `DEPLOY_HOST` / `DEPLOY_USER` the deploy job is skipped with a notice, so CI stays green.
-
-## Approval (Settings → Environments)
-
-Create an environment named **`production`** and add yourself as a **required reviewer**.
-The deploy job then waits for your approval after tests pass on `main`. Without protection
-rules it deploys automatically.
+Without `DEPLOY_HOST` / `DEPLOY_USER` the production deploy step is skipped with a notice,
+so CI stays green. The deploy step runs in the same CI job after tests, lint and type checks;
+it runs only for pushes to `main`.
 
 ## Optional
 

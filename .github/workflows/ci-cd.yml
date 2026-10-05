@@ -48,31 +48,15 @@ jobs:
         run: |
           mypy hybrid/ --ignore-missing-imports
 
-  # ──────────────────────────────────────────────
-  # DEPLOY TO ORACLE CLOUD (Always Free Ampere VM)
-  # ──────────────────────────────────────────────
-  # One VM runs the docker compose stack; this job SSHes in and runs
-  # scripts/deploy.sh for the exact commit that passed tests. The stack is
-  # updated in place (one bot, never duplicates). Secrets live in the VM's .env.
-  # Approval: the `production` environment should require a reviewer
-  # (Settings → Environments). Setup: DEPLOY.md.
-  deploy:
-    name: Deploy to Oracle Cloud VM
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: production
-    concurrency:
-      group: production-deploy
-      cancel-in-progress: false  # never interrupt a deploy halfway
-    permissions:
-      contents: read
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-    steps:
+      # Deploy on this same runner after all checks pass. A second GitHub-hosted
+      # runner made production deployment queue indefinitely and get cancelled.
+      # Secrets live in the VM's .env. Setup: DEPLOY.md.
       - name: Check deploy is configured
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: cfg
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ]; then
             echo "::notice::Deploy skipped: DEPLOY_HOST / DEPLOY_USER secrets not set (see DEPLOY.md)"
@@ -81,11 +65,7 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout code
-        if: steps.cfg.outputs.configured == 'true'
-        uses: actions/checkout@v4
-
-      - name: Configure SSH
+      - name: Configure SSH for production deploy
         if: steps.cfg.outputs.configured == 'true'
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -97,8 +77,11 @@ jobs:
           # pinned host key: refuse to deploy to anything else
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
-      - name: Deploy commit
+      - name: Deploy to Oracle Cloud VM
         if: steps.cfg.outputs.configured == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
             "$DEPLOY_USER@$DEPLOY_HOST" "bash -s -- $GITHUB_SHA" < scripts/deploy.sh
@@ -108,7 +91,7 @@ jobs:
   # ──────────────────────────────────────────────
   notify:
     name: Notify on Failure
-    needs: [test, deploy]
+    needs: test
     if: failure()
     runs-on: ubuntu-latest
     env:
