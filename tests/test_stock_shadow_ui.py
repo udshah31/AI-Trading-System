@@ -18,9 +18,11 @@ const assert = require('node:assert/strict');
 const elements = {};
 global.document = {
   addEventListener() {},
+  querySelectorAll() { return []; },
   getElementById(id) { return elements[id] ||= { textContent: '', innerHTML: '', className: '' }; }
 };
 global.window = {};
+global.history = { replaceState() {} };
 global.fetch = async () => { throw new Error('offline'); };
 '''
     checks = r'''
@@ -46,7 +48,7 @@ assert.match(elements.stockShadowNote.textContent, /Waiting for the first result
 const decision = {symbol: 'SPY', action: 'buy', score: .8, session_date: '<img src=x onerror=alert(1)>',
   close_price: 500, analyzed_at: '2026-11-27T18:20:00Z'};
 renderStockShadow({ ...base, enabled: true, decisions: [decision] });
-assert.match(elements.stockShadowCards.innerHTML, /Leaning toward buying/);
+assert.match(elements.stockShadowCards.innerHTML, /Technical signal: bullish/);
 assert.match(elements.stockShadowCards.innerHTML, /0.800/);
 assert.match(elements.stockShadowCards.innerHTML, /&lt;img/);
 assert.doesNotMatch(elements.stockShadowCards.innerHTML, /<img/);
@@ -74,6 +76,21 @@ assert.equal((elements.stockShadowCards.innerHTML.match(/<article/g) || []).leng
   await assert.rejects(loadStockShadow(), /offline/);
   assert.match(elements.stockShadowNote.textContent, /previously loaded snapshots/);
   assert.match(elements.stockShadowNote.className, /error/);
+  selectView('research');
+  assert.match(elements.stockShadowNote.textContent, /previously loaded snapshots/);
+  assert.match(elements.stockShadowNote.className, /error/);
+  renderStockShadow(base);
+  assert.match(elements.stockShadowNote.className, /error/);
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => base });
+  await loadStockShadow();
+  assert.doesNotMatch(elements.stockShadowNote.className, /error/);
+  global.fetch = async () => { throw new Error('offline'); };
+  renderMode('live');
+  await assert.rejects(loadBand(), /offline/);
+  assert.match(elements.modeTitle.textContent, /unknown/i);
+  assert.doesNotMatch(elements.modeCard.className, /safe|live/);
+  assert.match(elements.modeExplanation.textContent, /could not be verified/i);
+  assert.match(elements.stamp.textContent, /unknown/i);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 '''
     path = tmp_path / "stock-ui.cjs"
