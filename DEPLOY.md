@@ -97,9 +97,14 @@ that valuation timestamp. The snapshot **does not automatically re-rank**. Updat
 requires a reviewed data change and deployment. The loader verifies ten companies per sector,
 unique tickers, contiguous ranks and descending positive market caps.
 
-The dashboard groups results into expandable categories and provides a category selector.
-Cards include source links and market-cap ranks; ranking retrieval and research session dates
-are separate. Coverage counts show how many displayed symbols have a saved result.
+The dashboard shows a compact stock table with a category selector: stock/company, decision,
+last adjusted close, research date, and expandable row details. Decisions use the saved
+analysis action: Buy signal, Sell signal, or Wait. Symbols without results show Waiting for
+data; unrecognized actions show Unknown signal. Row details include scores, source links,
+and market-cap ranks; watchlist methodology is under Advanced details. Ranking retrieval
+and research session dates are separate. Coverage counts show how many displayed symbols
+have a saved result. Expanded row details and keyboard focus survive a successful refresh;
+failed-refresh warnings remain visible through navigation and filtering until recovery.
 Price-data failures do not replace the sourced ranking with guessed alternatives.
 Existing results are retained; the latest saved row is selected independently per symbol.
 
@@ -123,11 +128,11 @@ tradable execution quotes. It records the technical weights used. No stock LLM r
 risk approvals, broker orders, or stock outcomes for the crypto learning loop are generated.
 The existing BTC/ETH schedule and capital are unchanged.
 
-The dashboard's beginner-friendly **Explore stocks** section and authenticated
+The dashboard's beginner-friendly **Stock decisions** table under **Stock research** and authenticated
 `GET /api/stocks/shadow` endpoint show the latest persisted results. The enabled indicator
 reflects the configuration flag, not proof of healthy calendar/data access; inspect bot logs
 for `[StockShadow]` failures and the displayed session dates for freshness. Historical rows
-remain visible when the feature is disabled. A BUY/SELL label here is a research signal,
+remain visible when the feature is disabled. A Buy signal / Sell signal label here is research,
 **not an executed trade or an instruction to trade**.
 
 Test locally without API calls: `.venv/bin/python -m pytest tests/test_stock_shadow.py -q -p no:anchorpy`.
