@@ -99,13 +99,22 @@ that valuation timestamp. The snapshot **does not automatically re-rank**. Updat
 requires a reviewed data change and deployment. The loader verifies ten companies per sector,
 unique tickers, contiguous ranks and descending positive market caps.
 
-The dashboard shows a compact stock table with a category selector: stock/company, decision,
-last adjusted close, research date, and expandable row details. Decisions use the saved
+The dashboard lists all eleven groups (ten sectors plus ETF benchmarks) in a category overview
+with asset counts, saved-result coverage, signal counts, and median scores. These summaries
+cover the full watchlist before filters, use each symbol's latest saved session, and do not
+represent same-day sector performance. Missing/invalid scores are excluded from the median.
+Below it, a grouped stock table supports search by ticker/company/sector, category and signal
+filters, and expand/collapse controls. Rows show stock/company, decision,
+last adjusted close, research session, and expandable evidence. Decisions use the saved
 analysis action: Buy signal, Sell signal, or Wait. Symbols without results show Waiting for
-data; unrecognized actions show Unknown signal. Row details include scores, source links,
-and market-cap ranks; watchlist methodology is under Advanced details. Ranking retrieval
+data; unrecognized actions show Unknown signal. Row details include score, strategy conviction
+(not a profit probability), recorded time, saved thresholds, technical inputs/weights,
+source links, market capitalization and sector rank. Older rows without evidence show unavailable;
+current thresholds are clearly reference-only when saved thresholds are absent.
+Watchlist methodology is under Advanced details. Ranking retrieval
 and research session dates are separate. Coverage counts show how many displayed symbols
-have a saved result. Expanded row details and keyboard focus survive a successful refresh;
+have a saved result. Category groups start collapsed on mobile; mobile rows stack their fields.
+Category expansion state, expanded row details and keyboard focus survive a successful refresh;
 failed-refresh warnings remain visible through navigation and filtering until recovery.
 Price-data failures do not replace the sourced ranking with guessed alternatives.
 Existing results are retained; the latest saved row is selected independently per symbol.

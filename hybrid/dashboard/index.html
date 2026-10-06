@@ -34,11 +34,11 @@
 @media (prefers-color-scheme: light) {
   :root {
     --paper: #F3F6F3; --paper-2: #E7EFEC; --rule: #C8D8D3;
-    --ink: #152327; --ink-2: #5C716D;
-    --red: #C84C4B; --red-wash: rgba(200, 76, 75, 0.10);
-    --blue: #147C7C; --blue-wash: rgba(20, 124, 124, 0.10);
-    --green: #147A5B; --green-wash: rgba(20, 122, 91, 0.10);
-    --amber: #936812; --amber-wash: rgba(147, 104, 18, 0.10);
+    --ink: #152327; --ink-2: #536761;
+    --red: #B83D3C; --red-wash: rgba(184, 61, 60, 0.10);
+    --blue: #116B6B; --blue-wash: rgba(17, 107, 107, 0.10);
+    --green: #116F51; --green-wash: rgba(17, 111, 81, 0.10);
+    --amber: #80590D; --amber-wash: rgba(128, 89, 13, 0.10);
     --hi: #F4E6B0; --shadow: rgba(20, 47, 44, 0.10);
     --hatch-buy: rgba(20, 122, 91, 0.13); --hatch-sell: rgba(200, 76, 75, 0.14);
     color-scheme: light;
@@ -193,10 +193,33 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
 .status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .status-grid section + section { margin-top: 0; }
 
-/* Stocks: compact signals table with optional detail per row. */
+/* Stocks: whole-watchlist category overview, grouped records, evidence on demand. */
 .stock-intro { max-width: 76ch; margin: 12px 0; }
 .stock-status { border-left: 3px solid var(--rule); padding: 12px 16px; background: var(--paper-2); }
 .stock-status.error { border-color: var(--red); }
+.category-overview { margin-top: 24px; border: 1px solid var(--rule); border-radius: 12px; overflow-x: auto; overflow-y: hidden; }
+.category-overview caption { text-align: left; padding: 16px; font-size: 18px; font-weight: 700; background: var(--paper-2); }
+.category-table { min-width: 660px; }
+.category-table button { min-height: 44px; color: var(--blue); text-align: left; padding: 6px 0; font-weight: 700; }
+.category-table button[aria-pressed="true"] { color: var(--ink); text-decoration: underline; text-underline-offset: 5px; }
+.category-table tbody th { border-bottom-color: var(--rule); font-size: 14px; }
+.category-signals { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; font-weight: 500; }
+.category-signals .buy { color: var(--green); }
+.category-signals .sell { color: var(--red); }
+.category-signals .wait { color: var(--amber); }
+.category-signals .pending { color: var(--ink-2); }
+.category-coverage { white-space: nowrap; font-size: 12px; color: var(--ink-2); }
+.category-row th { padding: 0; background: var(--paper-2); border-top: 2px solid var(--rule); border-left: 3px solid var(--blue); }
+.category-toggle { width: 100%; min-height: 64px; padding: 12px 16px; text-align: left; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.category-title { flex: 1 1 220px; display: flex; align-items: center; gap: 10px; font-size: 16px; }
+.category-chevron { color: var(--blue); display: inline-block; }
+.category-toggle[aria-expanded="true"] .category-chevron { transform: rotate(90deg); }
+.category-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.category-actions button { padding: 6px 12px; min-height: 44px; border: 1px solid var(--rule); border-radius: 7px; color: var(--blue); font-size: 13px; }
+.stock-controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 16px; margin: 24px 0 12px; }
+.stock-controls .stock-browse { margin-top: 0; align-items: end; gap: 10px; }
+.stock-field { display: flex; flex-direction: column; gap: 6px; }
+.stock-field label { font-size: 12px; font-weight: 700; color: var(--ink-2); }
 .stock-table { min-width: 640px; }
 .stock-table tbody th { font-size: 15px; color: var(--ink); white-space: normal; border-bottom: 1px solid var(--rule); vertical-align: top; }
 .stock-table tbody tr:hover th { background: var(--paper-2); }
@@ -205,6 +228,11 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
 .asset-sector { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--ink-2); }
 .row-details > summary { min-height: 44px; padding: 6px 0; cursor: pointer; color: var(--blue); white-space: nowrap; }
 .row-details dl { min-width: 190px; font-size: 14px; }
+.row-details[open] { max-width: 290px; }
+.row-details h4 { margin-top: 16px; font-size: 14px; }
+.row-details .confidence-note { font-size: 12px; }
+.row-details .indicator-table { min-width: 210px; font-size: 12px; margin-top: 8px; }
+.indicator-table th, .indicator-table td { padding: 6px; font-size: 12px; }
 .row-details dl div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
 .row-details dd { text-align: right; }
 .row-details p { max-width: 30ch; font-size: 14px; margin: 8px 0; }
@@ -219,6 +247,29 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
 .stock-guide li + li { margin-top: 8px; }
 @media (max-width: 600px) {
   #stockResearch .section-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .stock-controls, .stock-controls .stock-browse { align-items: stretch; }
+  .stock-controls .stock-browse { width: 100%; }
+  .stock-field { flex: 1 1 140px; min-width: 0; }
+  .stock-field:first-child { flex-basis: 100%; }
+  .stock-browse input { min-width: 0; width: 100%; }
+  .stock-table { min-width: 0; }
+  .stock-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .stock-table tbody, .stock-table tr { display: block; }
+  .stock-table tr[hidden] { display: none; }
+  .stock-table tbody th, .stock-table tbody td { display: block; width: 100%; }
+  .stock-table tr[data-stock] { padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+  .stock-table tr[data-stock] > th { padding: 4px 0; border: 0; }
+  .stock-table tr[data-stock] > td { padding: 5px 0; border: 0; text-align: left; }
+  .stock-table td[data-label]::before { content: attr(data-label) ': '; color: var(--ink-2); font-size: 12px; }
+  .stock-table td.num { white-space: normal; }
+  .stock-table .category-row th { border-bottom: 1px solid var(--rule); }
+  .category-toggle { min-height: 88px; gap: 6px; }
+  .category-title { flex-basis: 100%; }
+  .row-details[open] { max-width: none; }
+  .row-details .indicator-table tr { display: table-row; }
+  .row-details .indicator-table th, .row-details .indicator-table td { display: table-cell; width: auto; }
+  .row-details .indicator-table tbody { display: table-row-group; }
+  .row-details .indicator-table thead { position: static; width: auto; height: auto; clip-path: none; }
 }
 
 /* ── Audit: LLM readings vs your labels ── */
@@ -523,17 +574,29 @@ td { padding-top: 11px; padding-bottom: 11px; }
       <p><strong>Research only · no stock orders</strong></p></div>
     <p class="stock-intro">100 stocks across 10 sectors, plus SPY and QQQ ETFs. Read the latest saved daily signals below.</p>
     <div id="stockShadowNote" class="stock-status" role="status" aria-live="polite">Loading stock research…</div>
-    <div class="stock-browse"><label for="stockSearch">Find a company</label>
-      <input id="stockSearch" type="search" placeholder="Ticker or company name" autocomplete="off">
-      <label for="stockSectorFilter">Browse a category</label>
-      <select id="stockSectorFilter"><option value="">All categories</option></select></div>
-    <p id="stockCoverage" class="note"></p>
-    <p class="scroll-hint" id="stockTableHint">Swipe sideways to see prices, dates, and details.</p>
+    <div class="category-overview table-wrap" tabindex="0" role="region" aria-label="All research categories">
+      <table class="category-table">
+        <caption>All categories</caption>
+        <thead><tr><th scope="col">Category</th><th scope="col" class="num">Assets</th><th scope="col">Research coverage</th><th scope="col">Saved signals</th><th scope="col" class="num">Median score</th></tr></thead>
+        <tbody id="stockCategories"><tr class="empty"><td colspan="5">Loading categories…</td></tr></tbody>
+      </table>
+    </div>
+    <p class="note">Category summaries cover the full watchlist, before filters. Scores use each asset’s latest saved session, which can differ; they are not return probabilities.</p>
+    <div class="stock-controls">
+      <div class="stock-browse">
+        <div class="stock-field"><label for="stockSearch">Find a company</label><input id="stockSearch" type="search" placeholder="Ticker, company or sector" autocomplete="off"></div>
+        <div class="stock-field"><label for="stockSectorFilter">Category</label><select id="stockSectorFilter"><option value="">All categories</option></select></div>
+        <div class="stock-field"><label for="stockSignalFilter">Signal</label><select id="stockSignalFilter"><option value="">All signals</option><option value="buy">Buy signal</option><option value="sell">Sell signal</option><option value="wait">Wait</option><option value="pending">Waiting for data</option><option value="unknown">Unknown signal</option></select></div>
+      </div>
+      <div class="category-actions"><button type="button" id="stockExpandAll">Expand categories</button><button type="button" id="stockCollapseAll">Collapse categories</button></div>
+    </div>
+    <p id="stockCoverage" class="note" role="status" aria-live="polite"></p>
+    <p class="scroll-hint" id="stockTableHint">Expand a category to see its stocks. Open Details for scores, sources and company information.</p>
     <div class="table-wrap" tabindex="0" role="region" aria-labelledby="stockShadowHead" aria-describedby="stockTableHint">
-      <table class="stock-table">
+      <table class="stock-table" role="table">
         <caption class="sr-only">Stock and ETF research signals. Closing prices are historical adjusted USD prices, not live quotes.</caption>
-        <thead><tr><th scope="col">Stock / company</th><th scope="col">Decision</th><th scope="col" class="num">Last close</th><th scope="col">Research date</th><th scope="col">More</th></tr></thead>
-        <tbody id="stockShadowRows"><tr class="empty"><td colspan="5">Loading stock research…</td></tr></tbody>
+        <thead><tr role="row"><th scope="col" role="columnheader">Stock / company</th><th scope="col" role="columnheader">Decision</th><th scope="col" role="columnheader" class="num">Adjusted close (USD)</th><th scope="col" role="columnheader">Research session</th><th scope="col" role="columnheader">Evidence &amp; company info</th></tr></thead>
+        <tbody id="stockShadowRows" role="rowgroup"><tr class="empty"><td colspan="5">Loading stock research…</td></tr></tbody>
       </table>
     </div>
     <details class="advanced-details">
@@ -547,6 +610,7 @@ td { padding-top: 11px; padding-bottom: 11px; }
       <ul>
         <li><strong>Buy signal / Sell signal / Wait</strong> describes the saved technical analysis. Waiting for data means there is no saved result. Signals are not orders or profit forecasts.</li>
         <li><strong>Signal score</strong> runs from 0 (bearish) to 1 (bullish). It is not a probability of making money. Thresholds come from the strategy configuration.</li>
+        <li><strong>Confidence</strong> is the strategy’s conviction measure derived from its score and thresholds, not a calibrated probability. Indicator scores and weights describe the saved technical inputs.</li>
         <li><strong>Session</strong> is the exchange trading day analyzed. Weekends and holidays do not produce a new session. Results use completed daily bars, at least 20 minutes after close.</li>
         <li><strong>Last close</strong> is Yahoo's historical closing price adjusted for corporate actions, not a live quote or guaranteed fill price.</li>
         <li>This first version uses <strong>technical indicators only</strong>, not LLM research. Saved results are historical and can differ from today's market.</li>
@@ -1162,6 +1226,42 @@ function onMessage(msg) {
 
 let stockShadowState = null;
 let stockShadowRefreshFailed = false;
+const stockCategoryCollapsed = new Map();
+const stockCategory = (asset) => asset.kind === 'etf' ? 'ETF benchmarks' : asset.sector;
+function stockNumber(value) {
+  if (value == null || value === '' || !['number', 'string'].includes(typeof value)) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+function stockScore(value) {
+  const number = stockNumber(value);
+  return number != null && number >= 0 && number <= 1 ? number : null;
+}
+function stockSummary(assets, decisions) {
+  const counts = { buy: 0, sell: 0, wait: 0, unknown: 0, pending: 0 };
+  const scores = [];
+  let saved = 0;
+  assets.forEach((asset) => {
+    const decision = decisions.get(asset.symbol);
+    const key = !decision ? 'pending' : signalInfo(decision.action) === SIGNAL_INFO.unknown ? 'unknown' : signalInfo(decision.action).tone;
+    counts[key]++;
+    if (decision) saved++;
+    const score = stockScore(decision?.score);
+    if (score != null) scores.push(score);
+  });
+  scores.sort((a, b) => a - b);
+  const middle = Math.floor(scores.length / 2);
+  const median = !scores.length ? null : scores.length % 2 ? scores[middle] : (scores[middle - 1] + scores[middle]) / 2;
+  return { counts, saved, median };
+}
+function stockCountLabels(counts) {
+  return `<span class="category-signals"><span class="buy">Buy ${counts.buy}</span><span class="sell">Sell ${counts.sell}</span><span class="wait">Wait ${counts.wait}</span><span class="pending">Waiting ${counts.pending}</span>${counts.unknown ? `<span class="pending">Unknown ${counts.unknown}</span>` : ''}</span>`;
+}
+function setStockCategoriesCollapsed(collapsed) {
+  if (!stockShadowState) return;
+  stockCategoryCollapsed.forEach((_, category) => stockCategoryCollapsed.set(category, collapsed));
+  renderStockShadow(stockShadowState);
+}
 function renderStockShadow(state) {
   stockShadowState = state;
   const note = $('stockShadowNote');
@@ -1174,59 +1274,111 @@ function renderStockShadow(state) {
         : 'Waiting for the first result. Research runs after a completed market session.';
   }
   const watchlist = state.watchlist || state.symbols.map((symbol) => ({ symbol, name: symbol, sector: 'Research watchlist', kind: 'stock' }));
+  const decisions = new Map(state.decisions.map((decision) => [decision.symbol, decision]));
   const filter = $('stockSectorFilter');
   const selected = filter.value || '';
-  const sectors = [...new Set(watchlist.map((asset) => asset.kind === 'etf' ? 'ETF benchmarks' : asset.sector))];
+  const sectors = [...new Set(watchlist.filter((asset) => asset.kind !== 'etf').map(stockCategory))];
+  if (watchlist.some((asset) => asset.kind === 'etf')) sectors.push('ETF benchmarks');
+  const categorySelected = sectors.includes(selected) ? selected : '';
+  const groups = sectors.map((category) => ({category, assets: watchlist.filter((asset) => stockCategory(asset) === category)}));
+  groups.forEach(({category}) => {
+    if (!stockCategoryCollapsed.has(category)) stockCategoryCollapsed.set(category, !!window.matchMedia?.('(max-width: 600px)').matches);
+  });
+  const focused = document.activeElement;
+  const focusedCategory = focused?.dataset?.category;
+  const focusedDirectory = focused?.dataset?.categoryFilter;
+  const categoryRows = groups.map(({category, assets}) => {
+    const {counts, saved, median} = stockSummary(assets, decisions);
+    return `<tr><th scope="row"><button type="button" data-category-filter="${esc(category)}" aria-pressed="${categorySelected === category}">${esc(category)}</button></th>
+      <td class="num">${assets.length}</td><td class="category-coverage">${saved}/${assets.length} analyzed</td><td>${stockCountLabels(counts)}</td>
+      <td class="num">${median == null ? 'Unavailable' : median.toFixed(3)}</td></tr>`;
+  }).join('');
+  const totalSaved = stockSummary(watchlist, decisions).saved;
+  $('stockCategories').innerHTML = categoryRows + `<tr class="total"><th scope="row"><button type="button" data-category-filter="" aria-pressed="${!categorySelected}">All categories</button></th><td class="num">${watchlist.length}</td><td>${totalSaved}/${watchlist.length} analyzed</td><td colspan="2">${groups.length} categories</td></tr>`;
   filter.innerHTML = '<option value="">All categories</option>' + sectors.map((sector) =>
     `<option value="${esc(sector)}">${esc(sector)}</option>`).join('');
-  filter.value = sectors.includes(selected) ? selected : '';
+  filter.value = categorySelected;
   const query = String($('stockSearch').value || '').trim().toLowerCase();
+  const signalFilter = $('stockSignalFilter').value || '';
   const visible = watchlist.filter((asset) => {
-    const inSector = !filter.value || (asset.kind === 'etf' ? 'ETF benchmarks' : asset.sector) === filter.value;
+    const inSector = !filter.value || stockCategory(asset) === filter.value;
     const haystack = `${asset.symbol} ${asset.name} ${asset.sector}`.toLowerCase();
-    return inSector && (!query || haystack.includes(query));
+    const decision = decisions.get(asset.symbol);
+    const signalKey = !decision ? 'pending' : signalInfo(decision.action) === SIGNAL_INFO.unknown ? 'unknown' : signalInfo(decision.action).tone;
+    return inSector && (!query || haystack.includes(query)) && (!signalFilter || signalKey === signalFilter);
   });
-  const saved = visible.filter((asset) => state.decisions.some((d) => d.symbol === asset.symbol)).length;
-  $('stockCoverage').textContent = `${saved} of ${visible.length} have results. Research dates are shown per row.`;
+  const saved = visible.filter((asset) => decisions.has(asset.symbol)).length;
+  $('stockCoverage').textContent = `${saved} of ${visible.length} have results. Showing ${visible.length} of ${watchlist.length} assets. Research dates are shown per row.`;
   $('stockRankingNote').textContent = state.ranking
     ? `Ranking snapshot retrieved ${new Date(state.ranking.retrieved_at).toLocaleDateString()}. Source: Stock Analysis. Not automatically re-ranked; source quotes may be delayed and valuation timestamps are not supplied.`
     : 'Ranking source metadata unavailable.';
   $('stockRankingMethod').textContent = state.ranking ? state.ranking.method : 'No ranking methodology supplied.';
   const tbody = $('stockShadowRows');
   const opened = new Set([...tbody.querySelectorAll('details[open]')].map((details) => details.closest('tr').dataset.stock));
-  const focused = document.activeElement;
   const focusedRow = tbody.contains(focused) ? focused.closest('tr[data-stock]') : null;
   const focusedSymbol = focusedRow?.dataset.stock;
   const focusTarget = focused?.tagName === 'A' ? 'a' : 'summary';
   const row = (asset) => {
     const symbol = asset.symbol;
-    const d = state.decisions.find((item) => item.symbol === symbol);
-    const threshold = `Current thresholds: buy ≥ ${Number(state.buy_threshold).toFixed(2)} · sell ≤ ${Number(state.sell_threshold).toFixed(2)}`;
-    const close = d?.close_price != null && Number.isFinite(Number(d.close_price)) && Number(d.close_price) > 0
-      ? money(d.close_price) : '<span class="muted">—</span>';
-    const score = d?.score != null && Number.isFinite(Number(d.score)) ? Number(d.score).toFixed(3) + ' / 1' : 'Unavailable';
-    return `<tr data-stock="${esc(symbol)}">
-      <th scope="row"><strong>${esc(symbol)}</strong><span class="asset-name">${esc(asset.name)}</span>
+    const d = decisions.get(symbol);
+    const features = d?.features || {};
+    const savedThresholds = stockScore(features.buy_threshold) != null && stockScore(features.sell_threshold) != null;
+    const buy = stockScore(savedThresholds ? features.buy_threshold : state.buy_threshold);
+    const sell = stockScore(savedThresholds ? features.sell_threshold : state.sell_threshold);
+    const threshold = `${savedThresholds ? 'Saved' : 'Current'} thresholds: buy ≥ ${buy == null ? 'Unavailable' : buy.toFixed(2)} · sell ≤ ${sell == null ? 'Unavailable' : sell.toFixed(2)}`;
+    const closeValue = stockNumber(d?.close_price);
+    const close = closeValue != null && closeValue > 0 ? money(closeValue) : '<span class="muted">Unavailable</span>';
+    const scoreValue = stockScore(d?.score);
+    const score = scoreValue == null ? 'Unavailable' : scoreValue.toFixed(3) + ' / 1';
+    const confidenceValue = stockScore(d?.confidence);
+    const confidence = confidenceValue == null ? 'Unavailable' : `${Math.round(confidenceValue * 100)}%`;
+    const cap = stockNumber(asset.market_cap_usd);
+    const marketCap = asset.kind === 'stock' && cap != null && cap > 0
+      ? new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2}).format(cap) : 'Not supplied';
+    const source = features.source === 'yahoo_daily_adjusted' ? 'Yahoo adjusted daily bars' : features.source ? esc(features.source) : 'Source not recorded';
+    const recorded = d?.analyzed_at && Number.isFinite(new Date(d.analyzed_at).getTime()) ? esc(new Date(d.analyzed_at).toLocaleString()) : 'Unavailable';
+    const indicatorRows = [['rsi', 'RSI'], ['ema', 'EMA trend'], ['bollinger', 'Bollinger bands'], ['volume', 'Volume']].map(([key, label]) => {
+      const input = stockScore(features[key]);
+      const weight = stockScore(features.weights?.[key]);
+      return `<tr><th scope="row">${label}</th><td class="num">${input == null ? 'Unavailable' : input.toFixed(3)}</td><td class="num">${weight == null ? 'Unavailable' : `${Math.round(weight * 100)}%`}</td></tr>`;
+    }).join('');
+    return `<tr data-stock="${esc(symbol)}" role="row"${stockCategoryCollapsed.get(stockCategory(asset)) ? ' hidden' : ''}>
+      <th scope="row" role="rowheader"><strong>${esc(symbol)}</strong><span class="asset-name">${esc(asset.name)}</span>
         <span class="asset-sector">${esc(asset.sector)} · ${asset.kind === 'etf' ? 'ETF' : 'Stock'}</span></th>
-      <td>${signalBadge(d?.action, !!d)}</td>
-      <td class="num">${close}</td><td class="num">${d ? esc(d.session_date) : '<span class="muted">—</span>'}</td>
-      <td><details class="row-details"${opened.has(symbol) ? ' open' : ''}><summary><span class="sr-only">${esc(symbol)} </span>Details</summary>
+      <td role="cell">${signalBadge(d?.action, !!d)}</td>
+      <td class="num" role="cell" data-label="Adjusted close (USD)">${close}</td><td class="num" role="cell" data-label="Research session">${d?.session_date ? esc(d.session_date) : '<span class="muted">Unavailable</span>'}</td>
+      <td role="cell"><details class="row-details"${opened.has(symbol) ? ' open' : ''}><summary><span class="sr-only">${esc(symbol)} </span>Details</summary>
         <p>${signalInfo(d?.action, !!d).reason}</p>
         <dl><div><dt>Signal score</dt><dd>${score}</dd></div>
-          ${d ? `<div><dt>Recorded</dt><dd>${esc(new Date(d.analyzed_at).toLocaleString())}</dd></div>` : ''}</dl>
+          <div><dt>Confidence</dt><dd>${confidence}</dd></div><div><dt>Recorded</dt><dd>${recorded}</dd></div>
+          <div><dt>Market cap (snapshot)</dt><dd>${marketCap}</dd></div>
+          <div><dt>Data source</dt><dd>${source}</dd></div></dl>
+        ${state.ranking?.retrieved_at ? `<p class="confidence-note">Ranking retrieved ${esc(new Date(state.ranking.retrieved_at).toLocaleDateString())}. Market caps are saved values, not live quotes.</p>` : ''}
+        <p class="confidence-note">Confidence measures strategy conviction, not the probability of a profitable trade.</p>
         <p>${esc(threshold)}</p>
-        ${asset.kind === 'stock' && Number.isFinite(asset.market_cap_usd)
-          ? `<p>Sector rank #${Number(asset.rank)} · market cap ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2 }).format(asset.market_cap_usd)}</p>` : ''}
+        ${!savedThresholds && d ? '<p class="confidence-note">Saved thresholds unavailable. Current thresholds are reference only.</p>' : ''}
+        ${asset.kind === 'stock' && stockNumber(asset.rank) != null ? `<p>Sector rank #${Number(asset.rank)} · saved market-cap snapshot</p>` : ''}
+        <h4>Saved technical inputs</h4><table class="indicator-table"><caption class="sr-only">${esc(symbol)} indicator scores and weights</caption><thead><tr><th scope="col">Indicator</th><th scope="col">Score / 1</th><th scope="col">Weight</th></tr></thead><tbody>${indicatorRows}</tbody></table>
         ${typeof asset.source_url === 'string' && asset.source_url.startsWith('https://')
-          ? `<a href="${esc(asset.source_url)}" target="_blank" rel="noopener noreferrer">Ranking source<span class="sr-only"> for ${esc(symbol)}</span></a>` : ''}
+          ? `<p><a href="${esc(asset.source_url)}" target="_blank" rel="noopener noreferrer">Ranking source<span class="sr-only"> for ${esc(symbol)}</span></a></p>` : ''}
       </details></td></tr>`;
   };
-  tbody.innerHTML = visible.map(row).join('')
-    || '<tr class="empty"><td colspan="5">No stocks in this category.</td></tr>';
+  tbody.innerHTML = groups.map(({category}) => {
+    const assets = visible.filter((asset) => stockCategory(asset) === category);
+    if (!assets.length) return '';
+    const {counts, saved, median} = stockSummary(assets, decisions);
+    return `<tr class="category-row" role="row"><th colspan="5" role="cell"><button class="category-toggle" type="button" data-category="${esc(category)}" aria-expanded="${!stockCategoryCollapsed.get(category)}">
+      <span class="category-title"><span class="category-chevron" aria-hidden="true">›</span>${esc(category)}</span><span class="category-coverage">${saved}/${assets.length} analyzed</span>
+      ${stockCountLabels(counts)}<span class="category-coverage">Median ${median == null ? 'unavailable' : median.toFixed(3)}</span><span class="sr-only"> Toggle category</span></button></th></tr>${assets.map(row).join('')}`;
+  }).join('') || '<tr class="empty"><td colspan="5">No matches. Clear search or change the category and signal filters.</td></tr>';
   if (focusedSymbol) {
     const updated = tbody.querySelector(`tr[data-stock="${CSS.escape(focusedSymbol)}"]`);
     const control = updated?.querySelector(focusTarget) || updated?.querySelector('summary') || tbody.closest('.table-wrap');
-    control.focus({ preventScroll: true });
+    control?.focus({ preventScroll: true });
+  } else if (focusedCategory != null) {
+    (tbody.querySelector(`button[data-category="${CSS.escape(focusedCategory)}"]`) || $('stockSignalFilter')).focus({preventScroll: true});
+  } else if (focusedDirectory != null) {
+    ($('stockCategories').querySelector(`button[data-category-filter="${CSS.escape(focusedDirectory)}"]`) || $('stockSectorFilter')).focus({preventScroll: true});
   }
 }
 
@@ -1288,6 +1440,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('stockSearch').addEventListener('input', () => {
     if (stockShadowState) renderStockShadow(stockShadowState);
   });
+  $('stockSignalFilter').addEventListener('change', () => {
+    if (stockShadowState) renderStockShadow(stockShadowState);
+  });
+  $('stockCategories').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-category-filter]');
+    if (!button || !stockShadowState) return;
+    $('stockSectorFilter').value = button.dataset.categoryFilter;
+    if (button.dataset.categoryFilter) stockCategoryCollapsed.set(button.dataset.categoryFilter, false);
+    renderStockShadow(stockShadowState);
+    const target = button.dataset.categoryFilter
+      ? $('stockShadowRows').querySelector(`button[data-category="${CSS.escape(button.dataset.categoryFilter)}"]`)
+      : $('stockSectorFilter');
+    (target || $('stockSectorFilter')).focus();
+  });
+  $('stockShadowRows').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-category]');
+    if (!button || !stockShadowState) return;
+    stockCategoryCollapsed.set(button.dataset.category, !stockCategoryCollapsed.get(button.dataset.category));
+    renderStockShadow(stockShadowState);
+  });
+  $('stockExpandAll').addEventListener('click', () => setStockCategoriesCollapsed(false));
+  $('stockCollapseAll').addEventListener('click', () => setStockCategoriesCollapsed(true));
   connect();
   await refresh();
   api('/api/sniper/alerts').then((l) => l.slice(0, 12).reverse().forEach(addSniperAlert)).catch(() => {});

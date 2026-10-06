@@ -13,11 +13,11 @@ The bot keeps the books; you operate and audit them. Visual choices come from a 
 | paper-2 | `#E7EFEC` | `#17262A` | panels, hover, and secondary surface |
 | rule | `#C8D8D3` | `#2C4244` | table rules and panel edges |
 | ink | `#152327` | `#EAF4EF` | primary text and verified values |
-| ink-2 | `#5C716D` | `#94AAA4` | secondary text and timestamps |
-| red | `#C84C4B` | `#FF8178` | losses, sells, breached limits, live-money state |
-| buy signal | `#147A5B` | `#7EE0C1` | buy badge and healthy state |
-| wait signal | `#936812` | `#F0C56A` | wait, stale, and attention state |
-| blue | `#147C7C` | `#7DD7D2` | navigation, details, and keyboard focus |
+| ink-2 | `#536761` | `#94AAA4` | secondary text and timestamps |
+| red | `#B83D3C` | `#FF8178` | losses, sells, breached limits, live-money state |
+| buy signal | `#116F51` | `#7EE0C1` | buy badge and healthy state |
+| wait signal | `#80590D` | `#F0C56A` | wait, stale, and attention state |
+| blue | `#116B6B` | `#7DD7D2` | navigation, details, and keyboard focus |
 
 ## Type
 
@@ -40,8 +40,11 @@ Overview
   Recent trades                         │
 
 Stock research
+  All-category table: asset count | coverage | Buy/Sell/Wait/Waiting/Unknown | median score
   Find a company or browse a category
+  Filter by signal · Expand/collapse category groups
   Stock / company | Decision | Last close | Research date | Details
+  Details: score, conviction, saved thresholds, indicator inputs/weights, rank, market cap, sources
   ▸ Advanced details: scores, ranking and sources
 
 Audit & learning
@@ -58,6 +61,10 @@ simple tables remain the default for detail;
 charts, scores and provenance use native expandable details. On phones the four navigation
 buttons form a visible two-by-two grid. Wide tables scroll inside their own focusable box.
 The optional score chart redraws when opened so it is measured at its visible width.
+The category overview always summarizes the full watchlist, independent of record filters.
+Grouped stock rows start expanded on desktop and collapsed on phones; mobile records stack
+with explicit price and session labels. Group state, expanded evidence, and keyboard focus
+survive refreshes. Median scores use only valid saved scores and may mix research sessions.
 
 ## Principles
 
