@@ -215,9 +215,32 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
 .stock-field { display: flex; flex-direction: column; gap: 6px; }
 .stock-field label { font-size: 12px; font-weight: 700; color: var(--ink-2); }
 .stock-table { min-width: 640px; }
+.research-board { border: 1px solid var(--rule); border-radius: 12px; overflow-x: auto; overflow-y: hidden; background: var(--paper); }
+.research-board .stock-table { min-width: 880px; }
+.research-board thead { background: var(--paper-2); }
+.research-board thead th { height: 46px; padding-top: 8px; padding-bottom: 8px; border-bottom: 2px solid var(--rule); font-size: 12px; font-weight: 700; }
+.research-board tbody tr.stock-row { background: color-mix(in srgb, var(--paper-2) 35%, transparent); }
+.research-board tbody tr.stock-row:hover td, .research-board tbody tr.stock-row:hover th { background: var(--paper-2); }
+.stock-row > th, .stock-row > td { height: 76px; vertical-align: middle; }
+.stock-identity { min-width: 245px; }
+.stock-row-summary { display: flex; align-items: baseline; gap: 9px; }
+.stock-symbol { font-size: 16px; letter-spacing: 0.01em; }
+.stock-name { overflow: hidden; color: var(--ink-2); font-size: 13px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.stock-sector { display: block; margin-top: 6px; color: var(--ink-2); font-size: 12px; }
+.stock-score, .stock-confidence { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 8px; border: 1px solid var(--rule); border-radius: 6px; font-family: var(--mono); font-size: 12px; }
+.stock-score { color: var(--ink); background: var(--paper-2); }
+.stock-confidence { color: var(--blue); background: var(--blue-wash); }
+.stock-date { color: var(--ink-2); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.stock-detail-cell { min-width: 100px; }
+.research-category-row th { padding: 0; border-top: 2px solid var(--rule); border-left: 4px solid var(--blue); background: var(--paper-2); }
+.research-category-row .category-toggle { min-height: 76px; }
+.research-category-row .category-title { flex: 0 1 220px; }
+.research-category-row .category-coverage { font-family: var(--mono); }
+.research-category-row .category-signals { flex: 1 1 auto; }
 .stock-table tbody th { font-size: 15px; color: var(--ink); white-space: normal; border-bottom: 1px solid var(--rule); vertical-align: top; }
 .stock-table tbody tr:hover th { background: var(--paper-2); }
 .stock-table td { vertical-align: top; }
+.research-board tbody tr.stock-row > th, .research-board tbody tr.stock-row > td { vertical-align: middle; }
 .asset-name { display: block; max-width: 28ch; margin-top: 2px; font-size: 14px; font-weight: 400; }
 .asset-sector { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--ink-2); }
 .row-details > summary { min-height: 44px; padding: 6px 0; cursor: pointer; color: var(--blue); white-space: nowrap; }
@@ -257,13 +280,30 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
   .stock-table td[data-label]::before { content: attr(data-label) ': '; color: var(--ink-2); font-size: 12px; }
   .stock-table td.num { white-space: normal; }
   .stock-table .category-row th { border-bottom: 1px solid var(--rule); }
+  .research-board { border-radius: 10px; }
+  .research-board .stock-table { min-width: 0; }
+  .research-board > .stock-table > thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); display: table-header-group; }
+  .research-board .stock-row { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; padding: 14px; }
+  .research-board .stock-row[hidden] { display: none !important; }
+  .research-board .stock-row > th, .research-board .stock-row > td { height: auto; width: auto; min-width: 0; padding: 4px 0; border: 0; text-align: left; }
+  .research-board .stock-row > th { grid-column: 1 / -1; }
+  .research-board .stock-row > td:nth-child(2) { grid-column: 1; }
+  .research-board .stock-row > td:nth-child(3), .research-board .stock-row > td:nth-child(4) { grid-column: 2; text-align: right; }
+  .research-board .stock-row > td:nth-child(5), .research-board .stock-row > td:nth-child(6), .research-board .stock-row > td:nth-child(7) { grid-column: 1 / -1; }
+  .research-board .stock-row > td[data-label]::before { content: attr(data-label) ': '; color: var(--ink-2); font-size: 12px; }
+  .research-board .stock-row .stock-detail-cell { padding-top: 9px; }
+  .research-board .stock-row-summary { display: block; }
+  .research-board .stock-name { display: block; max-width: 100%; margin-top: 3px; }
+  .research-board .research-category-row { display: block !important; }
+  .research-board .research-category-row th { display: block; width: 100%; }
+  .research-board .research-category-row .category-toggle { min-height: 94px; }
   .category-toggle { min-height: 88px; gap: 6px; }
   .category-title { flex-basis: 100%; }
   .row-details[open] { max-width: none; }
   .row-details .indicator-table tr { display: table-row; }
   .row-details .indicator-table th, .row-details .indicator-table td { display: table-cell; width: auto; }
   .row-details .indicator-table tbody { display: table-row-group; }
-  .row-details .indicator-table thead { position: static; width: auto; height: auto; clip-path: none; }
+  .row-details .indicator-table thead { position: static; width: auto; height: auto; overflow: visible; clip-path: none; display: table-header-group; }
 }
 
 /* ── Audit: LLM readings vs your labels ── */
@@ -579,11 +619,11 @@ td { padding-top: 11px; padding-bottom: 11px; }
     </div>
     <p id="stockCoverage" class="note" role="status" aria-live="polite"></p>
     <p class="scroll-hint" id="stockTableHint">Expand a category to see its stocks. Open Details for scores, sources and company information.</p>
-    <div class="table-wrap" tabindex="0" role="region" aria-labelledby="stockShadowHead" aria-describedby="stockTableHint">
+    <div class="table-wrap research-board" tabindex="0" role="region" aria-labelledby="stockShadowHead" aria-describedby="stockTableHint">
       <table class="stock-table" role="table">
         <caption class="sr-only">Stock and ETF research signals. Closing prices are historical adjusted USD prices, not live quotes.</caption>
-        <thead><tr role="row"><th scope="col" role="columnheader">Stock / company</th><th scope="col" role="columnheader">Decision</th><th scope="col" role="columnheader" class="num">Adjusted close (USD)</th><th scope="col" role="columnheader">Research session</th><th scope="col" role="columnheader">Evidence &amp; company info</th></tr></thead>
-        <tbody id="stockShadowRows" role="rowgroup"><tr class="empty"><td colspan="5">Loading stock research…</td></tr></tbody>
+        <thead><tr role="row"><th scope="col" role="columnheader">Asset</th><th scope="col" role="columnheader">Signal</th><th scope="col" role="columnheader">Score</th><th scope="col" role="columnheader">Confidence</th><th scope="col" role="columnheader" class="num">Adjusted close (USD)</th><th scope="col" role="columnheader">Research session</th><th scope="col" role="columnheader">Evidence &amp; company info</th></tr></thead>
+        <tbody id="stockShadowRows" role="rowgroup"><tr class="empty"><td colspan="7">Loading stock research…</td></tr></tbody>
       </table>
     </div>
     <details class="advanced-details">
@@ -1320,12 +1360,14 @@ function renderStockShadow(state) {
       const weight = stockScore(features.weights?.[key]);
       return `<tr><th scope="row">${label}</th><td class="num">${input == null ? 'Unavailable' : input.toFixed(3)}</td><td class="num">${weight == null ? 'Unavailable' : `${Math.round(weight * 100)}%`}</td></tr>`;
     }).join('');
-    return `<tr data-stock="${esc(symbol)}" role="row"${stockCategoryCollapsed.get(stockCategory(asset)) ? ' hidden' : ''}>
-      <th scope="row" role="rowheader"><strong>${esc(symbol)}</strong><span class="asset-name">${esc(asset.name)}</span>
-        <span class="asset-sector">${esc(asset.sector)} · ${asset.kind === 'etf' ? 'ETF' : 'Stock'}</span></th>
+    return `<tr data-stock="${esc(symbol)}" class="stock-row" role="row"${stockCategoryCollapsed.get(stockCategory(asset)) ? ' hidden' : ''}>
+      <th scope="row" role="rowheader" class="stock-identity"><div class="stock-row-summary"><strong class="stock-symbol">${esc(symbol)}</strong><span class="stock-name">${esc(asset.name)}</span></div>
+        <span class="stock-sector">${esc(asset.sector)} · ${asset.kind === 'etf' ? 'ETF' : 'Stock'}</span></th>
       <td role="cell">${signalBadge(d?.action, !!d)}</td>
-      <td class="num" role="cell" data-label="Adjusted close (USD)">${close}</td><td class="num" role="cell" data-label="Research session">${d?.session_date ? esc(d.session_date) : '<span class="muted">Unavailable</span>'}</td>
-      <td role="cell"><details class="row-details"${opened.has(symbol) ? ' open' : ''}><summary><span class="sr-only">${esc(symbol)} </span>Details</summary>
+      <td role="cell" data-label="Score"><span class="stock-score">${scoreValue == null ? 'Unavailable' : scoreValue.toFixed(3)}</span></td>
+      <td role="cell" data-label="Confidence"><span class="stock-confidence">${confidence}</span></td>
+      <td class="num" role="cell" data-label="Adjusted close (USD)">${close}</td><td role="cell" data-label="Research session"><span class="stock-date">${d?.session_date ? esc(d.session_date) : 'Unavailable'}</span></td>
+      <td role="cell" class="stock-detail-cell"><details class="row-details"${opened.has(symbol) ? ' open' : ''}><summary><span class="sr-only">${esc(symbol)} </span>Details</summary>
         <p>${signalInfo(d?.action, !!d).reason}</p>
         <dl><div><dt>Signal score</dt><dd>${score}</dd></div>
           <div><dt>Confidence</dt><dd>${confidence}</dd></div><div><dt>Recorded</dt><dd>${recorded}</dd></div>
@@ -1344,11 +1386,11 @@ function renderStockShadow(state) {
   const groupedRows = groups.map(({category, assets: allAssets}) => {
     const assets = visible.filter((asset) => stockCategory(asset) === category);
     const {counts, saved, median} = stockSummary(allAssets, decisions);
-    return `<tr class="category-row" role="row"><th colspan="5" role="cell"><button class="category-toggle" type="button" data-category="${esc(category)}" aria-expanded="${!stockCategoryCollapsed.get(category)}">
+    return `<tr class="category-row research-category-row" role="row"><th colspan="7" role="cell"><button class="category-toggle" type="button" data-category="${esc(category)}" aria-expanded="${!stockCategoryCollapsed.get(category)}">
       <span class="category-title"><span class="category-chevron" aria-hidden="true">›</span>${esc(category)}</span><span class="category-coverage">${saved}/${allAssets.length} analyzed</span>
       ${stockCountLabels(counts)}<span class="category-coverage">Median ${median == null ? 'unavailable' : median.toFixed(3)}</span><span class="sr-only"> Toggle category</span></button></th></tr>${assets.map(row).join('')}`;
   }).join('');
-  tbody.innerHTML = groupedRows + (visible.length ? '' : '<tr class="empty"><td colspan="5">No matches. Clear search or change the category and signal filters.</td></tr>');
+  tbody.innerHTML = groupedRows + (visible.length ? '' : '<tr class="empty"><td colspan="7">No matches. Clear search or change the category and signal filters.</td></tr>');
   if (focusedSymbol) {
     const updated = tbody.querySelector(`tr[data-stock="${CSS.escape(focusedSymbol)}"]`);
     const control = updated?.querySelector(focusTarget) || updated?.querySelector('summary') || tbody.closest('.table-wrap');
@@ -1366,7 +1408,9 @@ async function loadStockShadow() {
   } catch (error) {
     stockShadowRefreshFailed = true;
     $('stockShadowNote').className = 'stock-status error';
-    $('stockShadowNote').textContent = 'Could not refresh stock research. Displayed rows are previously loaded snapshots, not current status.';
+    $('stockShadowNote').textContent = stockShadowState
+      ? 'Could not refresh stock research. Displayed rows are previously loaded snapshots, not current status.'
+      : 'Could not load stock research. Try refreshing the dashboard.';
     throw error;
   }
 }

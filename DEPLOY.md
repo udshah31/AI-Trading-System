@@ -105,8 +105,8 @@ signal counts, and median scores, followed by the matching stock rows. These sum
 the full watchlist before filters, use each symbol's latest saved session, and do not represent
 same-day sector performance. Missing/invalid scores are excluded from the median. The table
 supports search by ticker/company/sector, category and signal filters, and expand/collapse
-controls. Rows show stock/company, decision,
-last adjusted close, research session, and expandable evidence. Decisions use the saved
+controls. Rows use a compact research-board layout: stock/company identity, signal, score,
+confidence, adjusted close, research session, and expandable evidence. Decisions use the saved
 analysis action: Buy signal, Sell signal, or Wait. Symbols without results show Waiting for
 data; unrecognized actions show Unknown signal. Row details include score, strategy conviction
 (not a profit probability), recorded time, saved thresholds, technical inputs/weights,
