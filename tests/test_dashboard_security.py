@@ -49,6 +49,13 @@ def test_valid_credentials_pass_auth(client):
     assert client.get("/api/risk", auth=AUTH).status_code != 401
 
 
+def test_risk_failure_is_not_reported_as_success(client, monkeypatch):
+    monkeypatch.setattr(dashboard, "storage", None)
+    response = client.get("/api/risk", auth=AUTH)
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Risk data unavailable"
+
+
 def test_websocket_rejected_without_credentials(client):
     with pytest.raises(WebSocketDisconnect) as exc:
         with client.websocket_connect("/ws"):

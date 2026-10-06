@@ -896,7 +896,7 @@ async def get_strategies():
 async def get_risk_metrics():
     """Get live risk metrics"""
     if not storage:
-        return {"error": "Storage not available"}
+        raise HTTPException(status_code=503, detail="Risk data unavailable")
     try:
         async with _db().db.session() as session:
             from sqlalchemy import select, func
@@ -958,7 +958,7 @@ async def get_risk_metrics():
             }
     except Exception as e:
         print(f"[Risk API] Error: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=503, detail="Risk data unavailable") from e
 
 
 # --- Live Strategy Status ---
