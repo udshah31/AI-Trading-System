@@ -1069,7 +1069,8 @@ async def stock_shadow_state():
                            "session_close": r.session_close.isoformat(),
                            "analyzed_at": r.analyzed_at.isoformat(), "action": r.action,
                            "score": float(r.score), "confidence": float(r.confidence),
-                           "close_price": float(r.close_price)} for r in latest.values()]}
+                           "close_price": float(r.close_price), "features": r.features or {}}
+                          for r in latest.values()]}
 
 
 # --- Learning loop: outcomes, re-fit proposals, approval ---

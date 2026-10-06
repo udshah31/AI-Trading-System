@@ -236,5 +236,9 @@ def test_dashboard_shadow_is_authenticated_and_separate_from_crypto(storage, mon
     assert {row["symbol"] for row in result["decisions"]} == set(SYMBOLS)
     by_symbol = {row["symbol"]: row for row in result["decisions"]}
     assert by_symbol["JNJ"]["session_date"] == "2026-11-27"
+    assert by_symbol["JNJ"]["features"]["source"] == "yahoo_daily_adjusted"
+    assert by_symbol["JNJ"]["features"]["rsi"] == 0.8
+    assert by_symbol["JNJ"]["features"]["buy_threshold"] == HybridConfig().buy_threshold
+    assert by_symbol["SPY"]["features"] == {}  # Older rows without evidence remain usable.
     assert by_symbol["SPY"]["session_date"] == (date(2026, 11, 27) + timedelta(days=70)).isoformat()
     assert client.get("/api/decision-band", auth=("admin", "pw")).json()["coins"] == []

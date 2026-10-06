@@ -17,7 +17,7 @@ def run_ui_checks(tmp_path, checks, fixtures=""):
     harness = r'''
 const assert = require('node:assert/strict');
 const elements = { stockShadowRows: { innerHTML: '', querySelectorAll() { return []; }, contains() { return false; } },
-  decisionRows: { innerHTML: '' } };
+  decisionRows: { innerHTML: '' }, stockCategories: {innerHTML: ''} };
 global.document = {
   addEventListener() {},
   querySelectorAll() { return []; },
@@ -65,7 +65,7 @@ const decision = {symbol: 'SPY', action: 'buy', score: .8, session_date: '<img s
 const decisions = [decision, {...decision, symbol: 'QQQ', action: 'sell', score: .2},
   {...decision, symbol: 'AAPL', action: 'hold', score: .99}];
 renderStockShadow({ ...base, enabled: true, decisions });
-const row = symbol => elements.stockShadowRows.innerHTML.match(new RegExp(`<tr data-stock="${symbol}">[\\s\\S]*?</tr>`))[0];
+const row = symbol => elements.stockShadowRows.innerHTML.match(new RegExp(`<tr data-stock="${symbol}"[^>]*>[\\s\\S]*?</tr>`))[0];
 assert.match(row('SPY'), /Buy signal/);
 assert.match(row('QQQ'), /Sell signal/);
 assert.match(row('AAPL'), />Wait</);
@@ -75,7 +75,7 @@ assert.match(elements.stockShadowRows.innerHTML, /0.800/);
 assert.match(elements.stockShadowRows.innerHTML, /&lt;img/);
 assert.doesNotMatch(elements.stockShadowRows.innerHTML, /<img/);
 assert.match(elements.stockShadowNote.textContent, /not live prices/);
-assert.doesNotMatch(elements.stockShadowRows.innerHTML, /<button/);
+assert.doesNotMatch(elements.stockShadowRows.innerHTML, /Place order|Buy now|Sell now/);
 renderStockShadow({ ...base, decisions: [decision] });
 assert.match(elements.stockShadowNote.textContent, /historical/);
 elements.stockSectorFilter.value = 'Healthcare';
@@ -201,3 +201,84 @@ renderStockShadow(base);
 assert.equal((elements.stockShadowRows.innerHTML.match(/<tr data-stock=/g) || []).length, 1);
 assert.match(elements.stockShadowRows.innerHTML, /AAPL/);
 ''', stock_fixtures())
+
+
+def test_stock_table_groups_every_category_and_shows_research_context(tmp_path):
+    run_ui_checks(tmp_path, r'''
+const decision = {symbol: 'AAPL', action: 'buy', score: .8, confidence: .72,
+  session_date: '2026-11-27', close_price: 500, analyzed_at: '2026-11-27T18:20:00Z'};
+renderStockShadow({enabled: true, decisions: [decision], buy_threshold: .7, sell_threshold: .3,
+  watchlist: WATCHLIST, symbols: SYMBOLS, ranking: RANKING});
+assert.equal((elements.stockShadowRows.innerHTML.match(/class="category-row"/g) || []).length, 11);
+assert.match(elements.stockShadowRows.innerHTML, /ETF benchmarks/);
+assert.match(elements.stockShadowRows.innerHTML, /IT \/ Technology/);
+assert.match(elements.stockShadowRows.innerHTML, /1\/10 analyzed/);
+assert.match(elements.stockShadowRows.innerHTML, /Buy 1/);
+assert.match(elements.stockShadowRows.innerHTML, /Confidence/);
+assert.match(elements.stockShadowRows.innerHTML, /Market cap/);
+const aapl = elements.stockShadowRows.innerHTML.match(/<tr data-stock="AAPL"[^>]*>[\s\S]*?<\/tr>/)[0];
+assert.match(aapl, /72%/);
+assert.match(elements.stockCategories.innerHTML, /Communication services/);
+assert.match(elements.stockCategories.innerHTML, /102/);
+''', stock_fixtures())
+
+
+def test_category_counts_and_missing_evidence_are_not_invented(tmp_path):
+    run_ui_checks(tmp_path, r'''
+const assets = [{symbol: 'A', name: 'Alpha', sector: 'Example', kind: 'stock'},
+  {symbol: 'B', name: 'Beta', sector: 'Example', kind: 'stock'},
+  {symbol: 'C', name: 'Gamma', sector: 'Example', kind: 'stock'},
+  {symbol: 'D', name: 'Delta', sector: 'Example', kind: 'stock'}];
+const state = {enabled: true, watchlist: assets, buy_threshold: .7, sell_threshold: .3,
+  decisions: [{symbol: 'A', action: 'buy', score: .8, confidence: 0, features: {
+      rsi: .25, ema: .9, bollinger: .5, volume: .75, weights: {rsi: .3},
+      buy_threshold: .65, sell_threshold: .35, source: 'yahoo_daily_adjusted'}},
+    {symbol: 'B', action: 'hold', score: null, confidence: null},
+    {symbol: 'C', action: 'invalid', score: Infinity, confidence: -1}]};
+renderStockShadow(state);
+assert.match(elements.stockCategories.innerHTML, /3\/4 analyzed/);
+assert.match(elements.stockCategories.innerHTML, /Buy 1/);
+assert.match(elements.stockCategories.innerHTML, /Wait 1/);
+assert.match(elements.stockCategories.innerHTML, /Unknown 1/);
+assert.match(elements.stockCategories.innerHTML, /Waiting 1/);
+assert.match(elements.stockCategories.innerHTML, /0\.800/); // Only the finite, non-null score contributes.
+assert.match(elements.stockShadowRows.innerHTML, /0\.250/);
+assert.match(elements.stockShadowRows.innerHTML, /Saved thresholds: buy ≥ 0\.65/);
+assert.match(elements.stockShadowRows.innerHTML, /Confidence<\/dt><dd>0%/);
+assert.match(elements.stockShadowRows.innerHTML, /Confidence<\/dt><dd>Unavailable/);
+assert.doesNotMatch(elements.stockShadowRows.innerHTML, /NaN|Infinity|-100%/);
+setStockCategoriesCollapsed(true);
+assert.equal((elements.stockShadowRows.innerHTML.match(/role="row" hidden/g) || []).length, 4);
+renderStockShadow(state);
+assert.equal((elements.stockShadowRows.innerHTML.match(/role="row" hidden/g) || []).length, 4);
+setStockCategoriesCollapsed(false);
+elements.stockSignalFilter.value = 'pending';
+renderStockShadow(state);
+assert.equal((elements.stockShadowRows.innerHTML.match(/<tr data-stock=/g) || []).length, 1);
+assert.match(elements.stockShadowRows.innerHTML, /data-stock="D"/);
+elements.stockSignalFilter.value = '';
+elements.stockSearch.value = 'unmatched';
+renderStockShadow(state);
+assert.match(elements.stockShadowRows.innerHTML, /No matches/);
+assert.match(elements.stockCategories.innerHTML, /3\/4 analyzed/); // Directory stays a whole-watchlist summary.
+''')
+
+
+def test_refresh_keeps_focus_when_signal_filter_removes_focused_category(tmp_path):
+    run_ui_checks(tmp_path, r'''
+const state = {enabled: true, watchlist: [{symbol: 'A', name: 'Alpha', sector: 'Example', kind: 'stock'}],
+  decisions: [{symbol: 'A', action: 'buy', score: .8}], buy_threshold: .7, sell_threshold: .3};
+renderStockShadow(state);
+elements.stockSignalFilter.value = 'buy';
+document.activeElement = {dataset: {category: 'Example'}};
+global.CSS = {escape: value => value};
+elements.stockSignalFilter.focus = function () { document.activeElement = this; };
+elements.stockShadowRows.querySelector = () => null;
+Object.defineProperty(elements.stockShadowRows, 'innerHTML', {
+  set(value) { this.markup = value; document.activeElement = null; },
+  get() { return this.markup; }
+});
+renderStockShadow({...state, decisions: [{symbol: 'A', action: 'sell', score: .2}]});
+assert.match(elements.stockShadowRows.innerHTML, /No matches/);
+assert.equal(document.activeElement, elements.stockSignalFilter);
+''')
