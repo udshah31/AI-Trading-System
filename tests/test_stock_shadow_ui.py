@@ -209,7 +209,7 @@ const decision = {symbol: 'AAPL', action: 'buy', score: .8, confidence: .72,
   session_date: '2026-11-27', close_price: 500, analyzed_at: '2026-11-27T18:20:00Z'};
 renderStockShadow({enabled: true, decisions: [decision], buy_threshold: .7, sell_threshold: .3,
   watchlist: WATCHLIST, symbols: SYMBOLS, ranking: RANKING});
-assert.equal((elements.stockShadowRows.innerHTML.match(/class="category-row"/g) || []).length, 11);
+assert.equal((elements.stockShadowRows.innerHTML.match(/class="category-row[^\"]*"/g) || []).length, 11);
 assert.match(elements.stockShadowRows.innerHTML, /ETF benchmarks/);
 assert.match(elements.stockShadowRows.innerHTML, /IT \/ Technology/);
 assert.match(elements.stockShadowRows.innerHTML, /1\/10 analyzed/);
@@ -272,10 +272,43 @@ def test_category_summary_and_stock_rows_share_one_research_table(tmp_path):
 const base = {enabled: false, decisions: [], buy_threshold: .7, sell_threshold: .3,
   watchlist: WATCHLIST, symbols: SYMBOLS, ranking: RANKING};
 renderStockShadow(base);
-assert.equal((elements.stockShadowRows.innerHTML.match(/class="category-row"/g) || []).length, 11);
-assert.match(elements.stockShadowRows.innerHTML, /<tr class="category-row"[\s\S]*?IT \/ Technology/);
-assert.match(elements.stockShadowRows.innerHTML, /<tr class="category-row"[\s\S]*?ETF benchmarks/);
+assert.equal((elements.stockShadowRows.innerHTML.match(/class="category-row[^\"]*"/g) || []).length, 11);
+assert.match(elements.stockShadowRows.innerHTML, /<tr class="category-row[^\"]*"[\s\S]*?IT \/ Technology/);
+assert.match(elements.stockShadowRows.innerHTML, /<tr class="category-row[^\"]*"[\s\S]*?ETF benchmarks/);
 ''', stock_fixtures())
+
+
+def test_research_board_rows_surface_signal_score_and_confidence(tmp_path):
+    page = Path("hybrid/dashboard/index.html").read_text()
+    for marker in ('class="table-wrap research-board"', 'class="stock-row-summary"', 'class="stock-score"', 'class="stock-confidence"'):
+        assert marker in page
+    assert 'Adjusted close (USD)' in page
+    assert 'Confidence' in page
+    run_ui_checks(tmp_path, r'''
+const state = {enabled: true, watchlist: [{symbol: 'AAPL', name: 'Apple Inc.', sector: 'IT / Technology', kind: 'stock', rank: 2, market_cap_usd: 5000000000000}],
+  decisions: [{symbol: 'AAPL', action: 'buy', score: .78, confidence: .72, close_price: 225.4,
+    session_date: '2026-10-05', analyzed_at: '2026-10-05T20:25:00Z', features: {source: 'yahoo_daily_adjusted'}}],
+  buy_threshold: .65, sell_threshold: .35, ranking: {retrieved_at: '2026-10-04T00:00:00Z', method: 'saved'} };
+renderStockShadow(state);
+const html = elements.stockShadowRows.innerHTML;
+assert.match(html, /class="category-row research-category-row"/);
+assert.match(html, /class="stock-row"/);
+assert.match(html, /class="stock-row-summary"/);
+assert.match(html, /class="stock-score"[^>]*>0\.780/);
+assert.match(html, /class="stock-confidence"[^>]*>72%/);
+assert.match(html, /Signal score/);
+assert.match(html, /Confidence/);
+''')
+
+
+def test_first_stock_refresh_failure_does_not_claim_cached_rows(tmp_path):
+    run_ui_checks(tmp_path, r'''
+(async () => {
+  await assert.rejects(loadStockShadow(), /offline/);
+  assert.match(elements.stockShadowNote.textContent, /Could not load stock research/);
+  assert.doesNotMatch(elements.stockShadowNote.textContent, /previously loaded snapshots/);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+''')
 
 
 def test_refresh_keeps_focus_when_signal_filter_removes_focused_category(tmp_path):
