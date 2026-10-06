@@ -96,6 +96,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .decision-table tbody th { font-size: 15px; color: var(--ink); border-bottom: 1px solid var(--rule); }
 .decision-table tbody tr:hover th { background: var(--paper-2); }
 .signal { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid currentColor; border-radius: 4px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.signal-details { margin-top: 7px; font-size: 12px; }
+.signal-details summary { display: inline-block; min-height: 32px; padding: 5px 0; color: var(--blue); cursor: pointer; }
+.signal-details p { max-width: 30ch; margin-top: 4px; color: var(--ink-2); line-height: 1.45; }
 .signal-buy { color: var(--green); background: var(--green-wash); }
 .signal-sell { color: var(--red); background: var(--red-wash); }
 .signal-wait { color: var(--amber); background: var(--amber-wash); }
@@ -207,7 +210,9 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
 .row-details p { max-width: 30ch; font-size: 14px; margin: 8px 0; }
 .row-details a { color: var(--blue); }
 .stock-browse { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
-.stock-browse select { font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); padding: 8px; max-width: 100%; }
+.stock-browse select, .stock-browse input { min-height: 42px; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 7px; padding: 8px 10px; max-width: 100%; }
+.stock-browse input { min-width: min(280px, 100%); }
+.stock-browse input:focus, .stock-browse select:focus { border-color: var(--blue); outline: 2px solid var(--blue-wash); outline-offset: 1px; }
 .stock-guide { margin-top: 16px; }
 .stock-guide summary { min-height: 44px; padding: 8px 0; cursor: pointer; font-weight: 700; }
 .stock-guide ul { margin: 12px 0 0 24px; max-width: 76ch; }
@@ -518,7 +523,9 @@ td { padding-top: 11px; padding-bottom: 11px; }
       <p><strong>Research only · no stock orders</strong></p></div>
     <p class="stock-intro">100 stocks across 10 sectors, plus SPY and QQQ ETFs. Read the latest saved daily signals below.</p>
     <div id="stockShadowNote" class="stock-status" role="status" aria-live="polite">Loading stock research…</div>
-    <div class="stock-browse"><label for="stockSectorFilter">Browse a category</label>
+    <div class="stock-browse"><label for="stockSearch">Find a company</label>
+      <input id="stockSearch" type="search" placeholder="Ticker or company name" autocomplete="off">
+      <label for="stockSectorFilter">Browse a category</label>
       <select id="stockSectorFilter"><option value="">All categories</option></select></div>
     <p id="stockCoverage" class="note"></p>
     <p class="scroll-hint" id="stockTableHint">Swipe sideways to see prices, dates, and details.</p>
@@ -681,7 +688,9 @@ function renderDecisionTable(coins) {
   $('decisionRows').innerHTML = coins.length
     ? [...coins].sort((a, b) => String(a.symbol).localeCompare(String(b.symbol))).map((c) => `<tr data-coin="${esc(c.symbol)}">
         <th scope="row"><strong>${coinName(c.symbol)}</strong></th>
-        <td>${signalBadge(c.action)}</td><td>${signalInfo(c.action).reason}</td></tr>`).join('')
+        <td>${signalBadge(c.action)}<details class="signal-details"><summary>View evidence</summary>
+          <p>${Number.isFinite(Number(c.score)) ? `Score <strong>${Number(c.score).toFixed(2)}</strong>. ` : 'Score unavailable. '}${esc(signalInfo(c.action).reason)}</p>
+        </details></td><td>${signalInfo(c.action).reason}</td></tr>`).join('')
     : '<tr class="empty"><td colspan="3">Waiting for data. The next analysis will appear here.</td></tr>';
 }
 
@@ -1171,7 +1180,12 @@ function renderStockShadow(state) {
   filter.innerHTML = '<option value="">All categories</option>' + sectors.map((sector) =>
     `<option value="${esc(sector)}">${esc(sector)}</option>`).join('');
   filter.value = sectors.includes(selected) ? selected : '';
-  const visible = watchlist.filter((asset) => !filter.value || (asset.kind === 'etf' ? 'ETF benchmarks' : asset.sector) === filter.value);
+  const query = String($('stockSearch').value || '').trim().toLowerCase();
+  const visible = watchlist.filter((asset) => {
+    const inSector = !filter.value || (asset.kind === 'etf' ? 'ETF benchmarks' : asset.sector) === filter.value;
+    const haystack = `${asset.symbol} ${asset.name} ${asset.sector}`.toLowerCase();
+    return inSector && (!query || haystack.includes(query));
+  });
   const saved = visible.filter((asset) => state.decisions.some((d) => d.symbol === asset.symbol)).length;
   $('stockCoverage').textContent = `${saved} of ${visible.length} have results. Research dates are shown per row.`;
   $('stockRankingNote').textContent = state.ranking
@@ -1269,6 +1283,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if ($('bandDetails').open) renderBand();
   });
   $('stockSectorFilter').addEventListener('change', () => {
+    if (stockShadowState) renderStockShadow(stockShadowState);
+  });
+  $('stockSearch').addEventListener('input', () => {
     if (stockShadowState) renderStockShadow(stockShadowState);
   });
   connect();
