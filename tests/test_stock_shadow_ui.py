@@ -186,3 +186,18 @@ assert.match(elements.riskStatus.textContent, /unavailable/i);
 assert.match(elements.limits.innerHTML, /could not be verified/i);
 assert.doesNotMatch(elements.limits.innerHTML, /0\.0% of 15\.0%/);
 ''')
+
+
+def test_decisions_expose_score_and_stock_research_can_be_searched(tmp_path):
+    run_ui_checks(tmp_path, r'''
+renderDecisionTable([{symbol: 'BTC/USDT', action: 'buy', score: .78}]);
+assert.match(elements.decisionRows.innerHTML, /Score <strong>0\.78/);
+assert.match(elements.decisionRows.innerHTML, /View evidence/);
+
+elements.stockSearch = {value: 'Apple'};
+const base = {enabled: false, decisions: [], buy_threshold: .7, sell_threshold: .3,
+  watchlist: WATCHLIST, symbols: SYMBOLS, ranking: RANKING};
+renderStockShadow(base);
+assert.equal((elements.stockShadowRows.innerHTML.match(/<tr data-stock=/g) || []).length, 1);
+assert.match(elements.stockShadowRows.innerHTML, /AAPL/);
+''', stock_fixtures())

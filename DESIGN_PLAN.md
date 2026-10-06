@@ -34,12 +34,13 @@ Overview  |  Stock research  |  Audit & learning  |  Operations
 Overview
   Account at a glance: Equity | Today's P&L | Exposure | Drawdown
   What the system decided                  │ Safety limits
+    ▸ View evidence: score and reported rationale
   ▸ Advanced details: scores and chart
   What you own                          │
   Recent trades                         │
 
 Stock research
-  Browse a category
+  Find a company or browse a category
   Stock / company | Decision | Last close | Research date | Details
   ▸ Advanced details: scores, ranking and sources
 
