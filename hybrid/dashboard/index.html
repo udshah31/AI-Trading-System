@@ -3,45 +3,45 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trading ledger</title>
+<title>Trading control room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;500&family=Atkinson+Hyperlegible+Next:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-/* ── Tokens: "The Auditor's Ledger" (see DESIGN_PLAN.md). Colour carries meaning only. ── */
+/* ── Tokens: "Trading control room" — calm surfaces, loud states, no decoration without meaning. ── */
 :root {
-  --paper: #EDF0E4;        /* ledger paper */
-  --paper-2: #E3E8D8;      /* ruled band / hover */
-  --rule: #BCC7AE;         /* green ruling: columns and totals */
-  --ink: #262B28;          /* graphite: text, profit, the buy side */
-  --ink-2: #60685C;        /* secondary text, including shaded table rows */
-  --red: #A8261B;          /* red ink: losses, sells, breached limits */
-  --red-wash: rgba(168, 38, 27, 0.08);
-  --blue: #2250B8;         /* blue pencil: your audit marks only */
-  --blue-wash: rgba(34, 80, 184, 0.10);
-  --green: #166046;        /* buy signals */
-  --green-wash: rgba(22, 96, 70, 0.08);
-  --amber: #765113;        /* wait signals */
-  --amber-wash: rgba(118, 81, 19, 0.08);
-  --hi: #F4DF5A;           /* highlighter: "look at this" */
-  --shadow: rgba(38, 43, 40, 0.10);
-  --hatch-buy: rgba(38, 43, 40, 0.16);
-  --hatch-sell: rgba(168, 38, 27, 0.16);
+  --paper: #10191D;
+  --paper-2: #17262A;
+  --rule: #2C4244;
+  --ink: #EAF4EF;
+  --ink-2: #94AAA4;
+  --red: #FF8178;
+  --red-wash: rgba(255, 129, 120, 0.12);
+  --blue: #7DD7D2;
+  --blue-wash: rgba(125, 215, 210, 0.12);
+  --green: #7EE0C1;
+  --green-wash: rgba(126, 224, 193, 0.12);
+  --amber: #F0C56A;
+  --amber-wash: rgba(240, 197, 106, 0.12);
+  --hi: #5B4B1E;
+  --shadow: rgba(0, 0, 0, 0.28);
+  --hatch-buy: rgba(126, 224, 193, 0.12);
+  --hatch-sell: rgba(255, 129, 120, 0.14);
   --sans: 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
   --mono: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
-  color-scheme: light;
+  color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --paper: #161B17; --paper-2: #1D241F; --rule: #33402F;
-    --ink: #DCE3D3; --ink-2: #8E9A88;
-    --red: #F07365; --red-wash: rgba(240, 115, 101, 0.10);
-    --blue: #8DA9FF; --blue-wash: rgba(141, 169, 255, 0.12);
-    --green: #96D5B5; --green-wash: rgba(150, 213, 181, 0.10);
-    --amber: #E3C472; --amber-wash: rgba(227, 196, 114, 0.10);
-    --hi: #5E5215; --shadow: rgba(0, 0, 0, 0.35);
-    --hatch-buy: rgba(220, 227, 211, 0.12); --hatch-sell: rgba(240, 115, 101, 0.18);
-    color-scheme: dark;
+    --paper: #F3F6F3; --paper-2: #E7EFEC; --rule: #C8D8D3;
+    --ink: #152327; --ink-2: #5C716D;
+    --red: #C84C4B; --red-wash: rgba(200, 76, 75, 0.10);
+    --blue: #147C7C; --blue-wash: rgba(20, 124, 124, 0.10);
+    --green: #147A5B; --green-wash: rgba(20, 122, 91, 0.10);
+    --amber: #936812; --amber-wash: rgba(147, 104, 18, 0.10);
+    --hi: #F4E6B0; --shadow: rgba(20, 47, 44, 0.10);
+    --hatch-buy: rgba(20, 122, 91, 0.13); --hatch-sell: rgba(200, 76, 75, 0.14);
+    color-scheme: light;
   }
 }
 
@@ -315,35 +315,123 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
   .log .log-src { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; animation: none !important; } }
+
+/* ── Control-room composition ── */
+body.control-room { background: var(--paper); }
+body.control-room .page { max-width: 1380px; padding: 0 32px 64px; }
+body.control-room .topline { padding: 24px 0 18px; border-bottom-color: var(--rule); }
+body.control-room .topline h1 { font-size: 19px; letter-spacing: -0.02em; }
+body.control-room .feed { font-family: var(--mono); font-size: 12px; letter-spacing: 0.01em; }
+body.control-room .feed .dot { width: 7px; height: 7px; background: var(--amber); box-shadow: 0 0 0 4px var(--amber-wash); }
+body.control-room .feed.on .dot { background: var(--green); box-shadow: 0 0 0 4px var(--green-wash); }
+.trust-strip {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 28px;
+  margin: 28px 0 18px; padding: 24px 28px 22px 32px; overflow: hidden;
+  border: 1px solid var(--rule); border-radius: 14px; background: var(--paper-2);
+}
+.trust-strip::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--amber); }
+.trust-strip.safe::before { background: var(--green); }
+.trust-strip.live::before { background: var(--red); }
+.trust-strip h2 { font-size: 25px; letter-spacing: -0.03em; }
+.trust-strip p { color: var(--ink-2); }
+.trust-strip .mode-detail { grid-column: 1 / -1; margin-top: 5px; font-family: var(--mono); font-size: 12px; }
+.trust-strip .stamp { align-self: start; transform: none; border-radius: 999px; border-width: 1px; padding: 7px 13px; }
+.trust-strip .stamp.live { background: var(--red); border-color: var(--red); }
+.attention-summary { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--ink) !important; font-weight: 700; }
+.attention-summary::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.attention-summary.warn::before { background: var(--amber); }
+.attention-summary.error::before { background: var(--red); }
+.main-nav { gap: 2px; margin-bottom: 32px; border-bottom: 1px solid var(--rule); }
+.main-nav button { min-height: 50px; padding: 9px 16px; border-radius: 8px 8px 0 0; font-weight: 700; color: var(--ink-2); }
+.main-nav button:hover, .main-nav button[aria-current="true"] { color: var(--ink); background: var(--paper-2); border-bottom-color: var(--blue); }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 28px; }
+.kpi { min-height: 120px; padding: 17px 18px 15px; border: 1px solid var(--rule); border-radius: 10px; background: color-mix(in srgb, var(--paper-2) 72%, transparent); }
+.kpi-label { color: var(--ink-2); font-size: 13px; font-weight: 700; }
+.kpi-value { margin-top: 13px; font-size: clamp(22px, 3vw, 30px); font-weight: 700; letter-spacing: -0.03em; }
+.kpi-note { margin-top: 5px; color: var(--ink-2); font-size: 13px; }
+.kpi-value.good { color: var(--green); }
+.kpi-value.warn { color: var(--amber); }
+.kpi-value.bad { color: var(--red); }
+.decision-board { border: 1px solid var(--rule); border-top: 3px solid var(--blue); border-radius: 14px; padding: 25px 24px 22px; background: var(--paper-2); }
+.decision-board .band-head { align-items: end; }
+.decision-board .decision-summary { color: var(--ink); font-size: 15px; }
+.decision-board .decision-table { margin-top: 22px; }
+.decision-board .decision-table th { border-bottom-color: var(--rule); }
+.decision-board .advanced-details { margin-top: 18px; }
+.decision-board .advanced-details > summary { color: var(--blue); }
+.risk-status { display: flex; align-items: center; min-height: 34px; margin: 10px 0 7px; color: var(--green); font-size: 13px; font-weight: 700; }
+.risk-status::before { content: '✓'; display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 7px; border: 1px solid currentColor; border-radius: 50%; font-size: 11px; }
+.risk-status.error { color: var(--red); }
+.risk-status.error::before { content: '!'; }
+.rail { padding-left: 4px; }
+.rail > section { padding: 20px; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper-2); }
+.rail .section-head { margin-bottom: 4px; }
+.body { gap: 24px; padding-top: 28px; }
+.body > div > section, .body > div > section + section { padding-top: 4px; }
+.table-wrap { border-radius: 8px; }
+table { font-size: 14px; }
+th { padding-top: 10px; color: var(--ink-2); }
+td { padding-top: 11px; padding-bottom: 11px; }
+.section-head h2 { letter-spacing: -0.02em; }
+.section-head p { font-family: var(--mono); font-size: 11px; }
+.signal { border-radius: 999px; padding: 5px 10px; font-size: 12px; letter-spacing: 0.01em; }
+.note { color: var(--ink-2); }
+.view-panel.active > section:first-child { margin-top: 0; }
+.audit, .learn, .log { border-top-color: var(--blue); }
+.audit-grid, .learn-grid { gap: 24px; }
+.btn { border-radius: 999px; }
+@media (max-width: 960px) {
+  body.control-room .page { padding-inline: 22px; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rail { padding-left: 0; }
+}
+@media (max-width: 600px) {
+  body.control-room .page { padding-inline: 16px; }
+  .trust-strip { grid-template-columns: minmax(0, 1fr); padding: 20px 18px 18px 22px; }
+  .trust-strip .stamp { justify-self: start; }
+  .kpi-grid { gap: 8px; }
+  .kpi { min-height: 104px; padding: 14px; }
+  .kpi-value { margin-top: 10px; font-size: 22px; }
+  .decision-board { padding: 20px 14px 16px; }
+  .main-nav { margin-bottom: 24px; }
+}
 </style>
 </head>
-<body>
+<body class="control-room">
 <a class="skip-link" href="#mainContent">Skip to main content</a>
 <div class="page">
   <header class="topline">
-    <h1>Trading ledger</h1>
+    <h1>Trading control room</h1>
     <p class="feed" id="feed" role="status"><span class="dot" aria-hidden="true"></span><span>Connecting to the live feed</span></p>
   </header>
 
-  <section class="mode-card" id="modeCard" aria-labelledby="modeTitle">
+  <section class="mode-card trust-strip" id="modeCard" aria-labelledby="modeTitle">
     <div><h2 id="modeTitle">Trading mode is unknown</h2>
       <p id="modeExplanation">Waiting for the system to confirm whether orders are simulated or use real money.</p></div>
     <p class="stamp" id="topModeStamp">Checking mode…</p>
     <p class="mode-detail" id="freshness" role="status">Waiting for a position snapshot…</p>
+    <p class="attention-summary" id="overviewAttention" role="status">Checking for exceptions…</p>
   </section>
   <nav class="main-nav" aria-label="Dashboard sections">
     <button type="button" data-view="overview" aria-current="true" aria-controls="overviewPanel">Overview</button>
     <button type="button" data-view="research" aria-current="false" aria-controls="researchPanel">Stock research</button>
-    <button type="button" data-view="advanced" aria-current="false" aria-controls="advancedPanel">Advanced tools</button>
-    <button type="button" data-view="activity" aria-current="false" aria-controls="activityPanel">Activity</button>
+    <button type="button" data-view="advanced" aria-current="false" aria-controls="advancedPanel">Audit &amp; learning</button>
+    <button type="button" data-view="activity" aria-current="false" aria-controls="activityPanel">Operations</button>
   </nav>
 
   <main id="mainContent" tabindex="-1">
   <section class="view-panel active" id="overviewPanel" data-panel="overview" aria-labelledby="overviewTitle">
     <h2 id="overviewTitle" class="sr-only">Overview</h2>
-    <p class="beginner-note">See the latest signals, what you own, and your recent trades.</p>
+    <p class="beginner-note">See what the system decided, what you own, and whether anything needs attention.</p>
 
-  <section class="band" aria-labelledby="decisionHead">
+  <section class="kpi-grid" aria-label="Account at a glance">
+    <article class="kpi"><p class="kpi-label">Account equity</p><p class="kpi-value" id="kpiEquityValue">—</p><p class="kpi-note" id="kpiEquityNote">Waiting for verified history</p></article>
+    <article class="kpi"><p class="kpi-label">Today’s P&amp;L</p><p class="kpi-value" id="kpiPnlValue">—</p><p class="kpi-note" id="kpiPnlNote">Waiting for risk data</p></article>
+    <article class="kpi"><p class="kpi-label">Position exposure</p><p class="kpi-value" id="kpiExposureValue">—</p><p class="kpi-note" id="kpiExposureNote">Waiting for risk data</p></article>
+    <article class="kpi"><p class="kpi-label">Drawdown</p><p class="kpi-value" id="kpiDrawdownValue">—</p><p class="kpi-note" id="kpiDrawdownNote">Waiting for risk data</p></article>
+  </section>
+
+  <section class="band decision-board" aria-labelledby="decisionHead">
     <div class="band-head">
       <div>
         <h2 id="decisionHead">Crypto decisions</h2>
@@ -414,9 +502,10 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
       </section>
     </div>
 
-    <aside class="rail">
+  <aside class="rail">
       <section aria-labelledby="limitsHead">
         <h2 id="limitsHead" class="section-head">Safety limits</h2>
+        <p class="risk-status" id="riskStatus" role="status">Checking risk data…</p>
         <div id="limits"><p class="note">Loading limits</p></div>
       </section>
     </aside>
@@ -465,8 +554,8 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
 
   <!-- Audit: how the LLM reports were read, and whether you agree -->
   <section class="view-panel" id="advancedPanel" data-panel="advanced" aria-labelledby="advancedTitle">
-  <h2 id="advancedTitle">Advanced tools</h2>
-  <p class="note">System status, report reviews, and indicator settings.</p>
+  <h2 id="advancedTitle">Audit &amp; learning</h2>
+  <p class="note">Review model readings, system health, and proposed strategy changes.</p>
   <section class="status-grid" aria-label="System status">
     <section aria-labelledby="agentsHead">
       <div class="section-head"><h3 id="agentsHead">Agents</h3><p id="agentsNote"></p></div>
@@ -532,7 +621,7 @@ tr.report .report-meta { font-size: 14px; color: var(--ink-2); margin-bottom: 6p
   </section>
 
   <section class="view-panel" id="activityPanel" data-panel="activity" aria-labelledby="activityTitle">
-  <h2 id="activityTitle" class="sr-only">Activity</h2>
+  <h2 id="activityTitle" class="sr-only">Operations</h2>
   <details class="log" id="logBox" open>
     <summary>Activity log <span id="logCount"></span></summary>
     <ol id="log"></ol>
@@ -668,7 +757,7 @@ function renderMode(mode) {
   const live = mode === 'live';
   const paper = mode === 'paper';
   const card = $('modeCard');
-  card.className = 'mode-card' + (live ? ' live' : paper || mode === 'dry_run' ? ' safe' : '');
+  card.className = 'mode-card trust-strip' + (live ? ' live' : paper || mode === 'dry_run' ? ' safe' : '');
   $('topModeStamp').className = 'stamp' + (live ? ' live' : '');
   $('topModeStamp').textContent = live ? 'Live mode' : paper ? 'Paper mode' : mode === 'dry_run' ? 'Simulation' : 'Mode unknown';
   $('modeTitle').textContent = live ? 'Live trading · real money' : paper ? 'Paper trading · no real money' : mode === 'dry_run' ? 'Simulation · no real orders' : 'Trading mode is unknown';
@@ -677,6 +766,20 @@ function renderMode(mode) {
     : paper ? 'Practice trades use a simulated brokerage account.'
     : mode === 'dry_run' ? 'The bot analyzes the market without submitting orders.'
     : 'The dashboard cannot confirm whether trading is safe. Ask the operator to check configuration.';
+}
+
+function setKpi(id, value, note, tone = '') {
+  const valueEl = $(id);
+  valueEl.innerHTML = value;
+  valueEl.className = `kpi-value${tone ? ` ${tone}` : ''}`;
+  const noteEl = $(id.replace('Value', 'Note'));
+  noteEl.textContent = note;
+}
+
+function setAttention(message, tone = '') {
+  const el = $('overviewAttention');
+  el.textContent = message;
+  el.className = `attention-summary${tone ? ` ${tone}` : ''}`;
 }
 
 function renderStamp() {
@@ -745,11 +848,17 @@ function renderTrades(list) {
 
 function renderBalance(history) {
   const data = (history && history.data) || [];
-  if (!data.length) { $('balanceChange').textContent = 'No balance history yet.'; $('spark').innerHTML = ''; return; }
+  if (!data.length) {
+    $('balanceChange').textContent = 'No verified balance history yet.';
+    $('spark').innerHTML = '';
+    setKpi('kpiEquityValue', 'Unavailable', 'No verified equity history', 'warn');
+    return;
+  }
   const first = data[0], last = data.at(-1), lo = Math.min(...data), hi = Math.max(...data);
   $('balance').innerHTML = money(last);
   const change = last - first;
   $('balanceChange').innerHTML = `${money(change, true)} over ${data.length} days`;
+  setKpi('kpiEquityValue', money(last), `${data.length}-day verified history`, last < 0 ? 'bad' : '');
   const y = (v) => hi === lo ? 20 : 38 - ((v - lo) / (hi - lo)) * 36;
   const pts = data.map((v, i) => `${(i / Math.max(1, data.length - 1)) * 100},${y(v).toFixed(2)}`).join(' ');
   $('spark').innerHTML = `<polyline points="${pts}"></polyline>`;
@@ -757,6 +866,27 @@ function renderBalance(history) {
 
 // ── Rail ──
 function renderLimits(r) {
+  if (!r || r.error) {
+    $('riskStatus').textContent = 'Risk data unavailable — safety cannot be verified';
+    $('riskStatus').className = 'risk-status error';
+    $('limits').innerHTML = '<p class="note">Risk limits could not be verified. No safety number is being assumed.</p>';
+    setKpi('kpiPnlValue', 'Unavailable', 'Risk feed unavailable', 'warn');
+    setKpi('kpiExposureValue', 'Unavailable', 'Risk feed unavailable', 'warn');
+    setKpi('kpiDrawdownValue', 'Unavailable', 'Risk feed unavailable', 'warn');
+    setAttention('Risk data could not be verified', 'error');
+    return;
+  }
+  const drawdown = Number(r.drawdown_pct);
+  const drawdownLimit = Number(r.max_drawdown_pct);
+  const exposure = Number(r.margin_used_pct);
+  const exposureLimit = Number(r.max_position_pct);
+  const pnl = Number(r.daily_pnl);
+  $('riskStatus').textContent = r.circuit_breaker ? 'Trading halted — drawdown limit breached' : 'Risk limits verified';
+  $('riskStatus').className = `risk-status${r.circuit_breaker ? ' error' : ''}`;
+  setKpi('kpiPnlValue', money(pnl, true), 'Today · verified risk feed', pnl < 0 ? 'bad' : 'good');
+  setKpi('kpiExposureValue', `${exposure.toFixed(1)}%`, `${money(r.total_exposure_usd)} of ${exposureLimit.toFixed(1)}% limit`, exposure >= exposureLimit ? 'bad' : exposure >= exposureLimit * 0.7 ? 'warn' : '');
+  setKpi('kpiDrawdownValue', `${drawdown.toFixed(1)}%`, `${drawdownLimit.toFixed(1)}% limit`, r.circuit_breaker ? 'bad' : drawdown >= drawdownLimit * 0.7 ? 'warn' : 'good');
+  setAttention(r.circuit_breaker ? 'Trading is halted by the drawdown guardrail' : 'No safety limits breached', r.circuit_breaker ? 'error' : '');
   const meter = (name, used, cap, fmt) => {
     const ratio = cap ? used / cap : 0;
     const state = ratio >= 1 ? 'breached' : ratio >= 0.7 ? 'near' : '';
@@ -771,6 +901,15 @@ function renderLimits(r) {
     meter('Money in positions', r.margin_used_pct ?? 0, r.max_position_pct ?? 20, pctFmt) +
     `<div class="limit"><div class="limit-row"><span>Risk budget left today</span><strong>${money(r.risk_budget_remaining ?? 0)}</strong></div></div>` +
     (r.circuit_breaker ? '<p class="halted">Trading halted: the drawdown limit was hit.</p>' : '');
+}
+
+async function loadRisk() {
+  try {
+    renderLimits(await api('/api/risk'));
+  } catch (error) {
+    renderLimits({ error: error.message });
+    throw error;
+  }
 }
 
 function renderAgents(list) {
@@ -1113,7 +1252,7 @@ async function refresh() {
     api('/api/positions').then(renderPositions),
     api('/api/trades?limit=12').then(renderTrades),
     api('/api/equity/history?days=30').then(renderBalance),
-    api('/api/risk').then(renderLimits),
+    loadRisk(),
     api('/api/agents').then(renderAgents),
     api('/api/strategies').then(renderStrategies),
   ];

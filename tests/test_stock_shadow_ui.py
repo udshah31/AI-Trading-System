@@ -166,3 +166,23 @@ for (const score of [null, NaN, Infinity]) {
   assert.equal(elements.bandList.innerHTML, '');
 }
 ''')
+
+
+def test_control_room_shell_and_risk_errors_are_explicit(tmp_path):
+    page = Path("hybrid/dashboard/index.html").read_text()
+    for marker in (
+        'class="mode-card trust-strip"',
+        'class="kpi-grid"',
+        'class="band decision-board"',
+        'id="riskStatus"',
+        'id="overviewAttention"',
+    ):
+        assert marker in page
+    assert "Trading control room" in page
+
+    run_ui_checks(tmp_path, r'''
+renderLimits({error: 'risk service offline'});
+assert.match(elements.riskStatus.textContent, /unavailable/i);
+assert.match(elements.limits.innerHTML, /could not be verified/i);
+assert.doesNotMatch(elements.limits.innerHTML, /0\.0% of 15\.0%/);
+''')
