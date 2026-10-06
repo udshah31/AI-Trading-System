@@ -40,8 +40,9 @@ Overview
   Recent trades                         │
 
 Stock research
-  All-category table: asset count | coverage | Buy/Sell/Wait/Waiting/Unknown | median score
-  Find a company or browse a category
+  One table: category summary row followed by its stock rows
+  Asset count | coverage | Buy/Sell/Wait/Waiting/Unknown | median score
+  Find a company or filter by category/signal
   Filter by signal · Expand/collapse category groups
   Stock / company | Decision | Last close | Research date | Details
   Details: score, conviction, saved thresholds, indicator inputs/weights, rank, market cap, sources
@@ -61,8 +62,8 @@ simple tables remain the default for detail;
 charts, scores and provenance use native expandable details. On phones the four navigation
 buttons form a visible two-by-two grid. Wide tables scroll inside their own focusable box.
 The optional score chart redraws when opened so it is measured at its visible width.
-The category overview always summarizes the full watchlist, independent of record filters.
-Grouped stock rows start expanded on desktop and collapsed on phones; mobile records stack
+Category summary rows and stock rows share one table; category summaries always cover the full
+watchlist, independent of record filters. Grouped stock rows start expanded on desktop and collapsed on phones; mobile records stack
 with explicit price and session labels. Group state, expanded evidence, and keyboard focus
 survive refreshes. Median scores use only valid saved scores and may mix research sessions.
 

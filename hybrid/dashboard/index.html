@@ -197,12 +197,6 @@ tr.empty td { color: var(--ink-2); padding: 20px 12px; border-left: 0; }
 .stock-intro { max-width: 76ch; margin: 12px 0; }
 .stock-status { border-left: 3px solid var(--rule); padding: 12px 16px; background: var(--paper-2); }
 .stock-status.error { border-color: var(--red); }
-.category-overview { margin-top: 24px; border: 1px solid var(--rule); border-radius: 12px; overflow-x: auto; overflow-y: hidden; }
-.category-overview caption { text-align: left; padding: 16px; font-size: 18px; font-weight: 700; background: var(--paper-2); }
-.category-table { min-width: 660px; }
-.category-table button { min-height: 44px; color: var(--blue); text-align: left; padding: 6px 0; font-weight: 700; }
-.category-table button[aria-pressed="true"] { color: var(--ink); text-decoration: underline; text-underline-offset: 5px; }
-.category-table tbody th { border-bottom-color: var(--rule); font-size: 14px; }
 .category-signals { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; font-weight: 500; }
 .category-signals .buy { color: var(--green); }
 .category-signals .sell { color: var(--red); }
@@ -574,14 +568,7 @@ td { padding-top: 11px; padding-bottom: 11px; }
       <p><strong>Research only · no stock orders</strong></p></div>
     <p class="stock-intro">100 stocks across 10 sectors, plus SPY and QQQ ETFs. Read the latest saved daily signals below.</p>
     <div id="stockShadowNote" class="stock-status" role="status" aria-live="polite">Loading stock research…</div>
-    <div class="category-overview table-wrap" tabindex="0" role="region" aria-label="All research categories">
-      <table class="category-table">
-        <caption>All categories</caption>
-        <thead><tr><th scope="col">Category</th><th scope="col" class="num">Assets</th><th scope="col">Research coverage</th><th scope="col">Saved signals</th><th scope="col" class="num">Median score</th></tr></thead>
-        <tbody id="stockCategories"><tr class="empty"><td colspan="5">Loading categories…</td></tr></tbody>
-      </table>
-    </div>
-    <p class="note">Category summaries cover the full watchlist, before filters. Scores use each asset’s latest saved session, which can differ; they are not return probabilities.</p>
+    <p class="note">Category summary rows and stock records share one table. Summaries cover the full watchlist before filters; scores use each asset’s latest saved session and are not return probabilities.</p>
     <div class="stock-controls">
       <div class="stock-browse">
         <div class="stock-field"><label for="stockSearch">Find a company</label><input id="stockSearch" type="search" placeholder="Ticker, company or sector" autocomplete="off"></div>
@@ -1286,15 +1273,6 @@ function renderStockShadow(state) {
   });
   const focused = document.activeElement;
   const focusedCategory = focused?.dataset?.category;
-  const focusedDirectory = focused?.dataset?.categoryFilter;
-  const categoryRows = groups.map(({category, assets}) => {
-    const {counts, saved, median} = stockSummary(assets, decisions);
-    return `<tr><th scope="row"><button type="button" data-category-filter="${esc(category)}" aria-pressed="${categorySelected === category}">${esc(category)}</button></th>
-      <td class="num">${assets.length}</td><td class="category-coverage">${saved}/${assets.length} analyzed</td><td>${stockCountLabels(counts)}</td>
-      <td class="num">${median == null ? 'Unavailable' : median.toFixed(3)}</td></tr>`;
-  }).join('');
-  const totalSaved = stockSummary(watchlist, decisions).saved;
-  $('stockCategories').innerHTML = categoryRows + `<tr class="total"><th scope="row"><button type="button" data-category-filter="" aria-pressed="${!categorySelected}">All categories</button></th><td class="num">${watchlist.length}</td><td>${totalSaved}/${watchlist.length} analyzed</td><td colspan="2">${groups.length} categories</td></tr>`;
   filter.innerHTML = '<option value="">All categories</option>' + sectors.map((sector) =>
     `<option value="${esc(sector)}">${esc(sector)}</option>`).join('');
   filter.value = categorySelected;
@@ -1363,22 +1341,20 @@ function renderStockShadow(state) {
           ? `<p><a href="${esc(asset.source_url)}" target="_blank" rel="noopener noreferrer">Ranking source<span class="sr-only"> for ${esc(symbol)}</span></a></p>` : ''}
       </details></td></tr>`;
   };
-  tbody.innerHTML = groups.map(({category}) => {
+  const groupedRows = groups.map(({category, assets: allAssets}) => {
     const assets = visible.filter((asset) => stockCategory(asset) === category);
-    if (!assets.length) return '';
-    const {counts, saved, median} = stockSummary(assets, decisions);
+    const {counts, saved, median} = stockSummary(allAssets, decisions);
     return `<tr class="category-row" role="row"><th colspan="5" role="cell"><button class="category-toggle" type="button" data-category="${esc(category)}" aria-expanded="${!stockCategoryCollapsed.get(category)}">
-      <span class="category-title"><span class="category-chevron" aria-hidden="true">›</span>${esc(category)}</span><span class="category-coverage">${saved}/${assets.length} analyzed</span>
+      <span class="category-title"><span class="category-chevron" aria-hidden="true">›</span>${esc(category)}</span><span class="category-coverage">${saved}/${allAssets.length} analyzed</span>
       ${stockCountLabels(counts)}<span class="category-coverage">Median ${median == null ? 'unavailable' : median.toFixed(3)}</span><span class="sr-only"> Toggle category</span></button></th></tr>${assets.map(row).join('')}`;
-  }).join('') || '<tr class="empty"><td colspan="5">No matches. Clear search or change the category and signal filters.</td></tr>';
+  }).join('');
+  tbody.innerHTML = groupedRows + (visible.length ? '' : '<tr class="empty"><td colspan="5">No matches. Clear search or change the category and signal filters.</td></tr>');
   if (focusedSymbol) {
     const updated = tbody.querySelector(`tr[data-stock="${CSS.escape(focusedSymbol)}"]`);
     const control = updated?.querySelector(focusTarget) || updated?.querySelector('summary') || tbody.closest('.table-wrap');
     control?.focus({ preventScroll: true });
   } else if (focusedCategory != null) {
     (tbody.querySelector(`button[data-category="${CSS.escape(focusedCategory)}"]`) || $('stockSignalFilter')).focus({preventScroll: true});
-  } else if (focusedDirectory != null) {
-    ($('stockCategories').querySelector(`button[data-category-filter="${CSS.escape(focusedDirectory)}"]`) || $('stockSectorFilter')).focus({preventScroll: true});
   }
 }
 
@@ -1442,17 +1418,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   $('stockSignalFilter').addEventListener('change', () => {
     if (stockShadowState) renderStockShadow(stockShadowState);
-  });
-  $('stockCategories').addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-category-filter]');
-    if (!button || !stockShadowState) return;
-    $('stockSectorFilter').value = button.dataset.categoryFilter;
-    if (button.dataset.categoryFilter) stockCategoryCollapsed.set(button.dataset.categoryFilter, false);
-    renderStockShadow(stockShadowState);
-    const target = button.dataset.categoryFilter
-      ? $('stockShadowRows').querySelector(`button[data-category="${CSS.escape(button.dataset.categoryFilter)}"]`)
-      : $('stockSectorFilter');
-    (target || $('stockSectorFilter')).focus();
   });
   $('stockShadowRows').addEventListener('click', (event) => {
     const button = event.target.closest('button[data-category]');

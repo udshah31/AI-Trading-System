@@ -99,12 +99,13 @@ that valuation timestamp. The snapshot **does not automatically re-rank**. Updat
 requires a reviewed data change and deployment. The loader verifies ten companies per sector,
 unique tickers, contiguous ranks and descending positive market caps.
 
-The dashboard lists all eleven groups (ten sectors plus ETF benchmarks) in a category overview
-with asset counts, saved-result coverage, signal counts, and median scores. These summaries
-cover the full watchlist before filters, use each symbol's latest saved session, and do not
-represent same-day sector performance. Missing/invalid scores are excluded from the median.
-Below it, a grouped stock table supports search by ticker/company/sector, category and signal
-filters, and expand/collapse controls. Rows show stock/company, decision,
+The dashboard uses one category-based research table. It lists all eleven groups (ten sectors
+plus ETF benchmarks) as expandable summary rows with asset counts, saved-result coverage,
+signal counts, and median scores, followed by the matching stock rows. These summaries cover
+the full watchlist before filters, use each symbol's latest saved session, and do not represent
+same-day sector performance. Missing/invalid scores are excluded from the median. The table
+supports search by ticker/company/sector, category and signal filters, and expand/collapse
+controls. Rows show stock/company, decision,
 last adjusted close, research session, and expandable evidence. Decisions use the saved
 analysis action: Buy signal, Sell signal, or Wait. Symbols without results show Waiting for
 data; unrecognized actions show Unknown signal. Row details include score, strategy conviction

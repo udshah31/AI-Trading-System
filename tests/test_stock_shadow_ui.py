@@ -17,7 +17,7 @@ def run_ui_checks(tmp_path, checks, fixtures=""):
     harness = r'''
 const assert = require('node:assert/strict');
 const elements = { stockShadowRows: { innerHTML: '', querySelectorAll() { return []; }, contains() { return false; } },
-  decisionRows: { innerHTML: '' }, stockCategories: {innerHTML: ''} };
+  decisionRows: { innerHTML: '' } };
 global.document = {
   addEventListener() {},
   querySelectorAll() { return []; },
@@ -82,7 +82,7 @@ elements.stockSectorFilter.value = 'Healthcare';
 renderStockShadow(base);
 assert.equal((elements.stockShadowRows.innerHTML.match(/<tr data-stock=/g) || []).length, 10);
 assert.match(elements.stockShadowRows.innerHTML, /Healthcare/);
-assert.doesNotMatch(elements.stockShadowRows.innerHTML, /IT \/ Technology/);
+assert.doesNotMatch(elements.stockShadowRows.innerHTML, /data-stock="NVDA"/);
 assert.match(elements.stockCoverage.textContent, /0 of 10/);
 renderStockShadow({ ...base, enabled: true });
 assert.equal(elements.stockSectorFilter.value, 'Healthcare');
@@ -218,8 +218,8 @@ assert.match(elements.stockShadowRows.innerHTML, /Confidence/);
 assert.match(elements.stockShadowRows.innerHTML, /Market cap/);
 const aapl = elements.stockShadowRows.innerHTML.match(/<tr data-stock="AAPL"[^>]*>[\s\S]*?<\/tr>/)[0];
 assert.match(aapl, /72%/);
-assert.match(elements.stockCategories.innerHTML, /Communication services/);
-assert.match(elements.stockCategories.innerHTML, /102/);
+assert.match(elements.stockShadowRows.innerHTML, /Communication services/);
+assert.equal((elements.stockShadowRows.innerHTML.match(/<tr data-stock=/g) || []).length, 102);
 ''', stock_fixtures())
 
 
@@ -236,12 +236,12 @@ const state = {enabled: true, watchlist: assets, buy_threshold: .7, sell_thresho
     {symbol: 'B', action: 'hold', score: null, confidence: null},
     {symbol: 'C', action: 'invalid', score: Infinity, confidence: -1}]};
 renderStockShadow(state);
-assert.match(elements.stockCategories.innerHTML, /3\/4 analyzed/);
-assert.match(elements.stockCategories.innerHTML, /Buy 1/);
-assert.match(elements.stockCategories.innerHTML, /Wait 1/);
-assert.match(elements.stockCategories.innerHTML, /Unknown 1/);
-assert.match(elements.stockCategories.innerHTML, /Waiting 1/);
-assert.match(elements.stockCategories.innerHTML, /0\.800/); // Only the finite, non-null score contributes.
+assert.match(elements.stockShadowRows.innerHTML, /3\/4 analyzed/);
+assert.match(elements.stockShadowRows.innerHTML, /Buy 1/);
+assert.match(elements.stockShadowRows.innerHTML, /Wait 1/);
+assert.match(elements.stockShadowRows.innerHTML, /Unknown 1/);
+assert.match(elements.stockShadowRows.innerHTML, /Waiting 1/);
+assert.match(elements.stockShadowRows.innerHTML, /0\.800/); // Only the finite, non-null score contributes.
 assert.match(elements.stockShadowRows.innerHTML, /0\.250/);
 assert.match(elements.stockShadowRows.innerHTML, /Saved thresholds: buy ≥ 0\.65/);
 assert.match(elements.stockShadowRows.innerHTML, /Confidence<\/dt><dd>0%/);
@@ -260,8 +260,22 @@ elements.stockSignalFilter.value = '';
 elements.stockSearch.value = 'unmatched';
 renderStockShadow(state);
 assert.match(elements.stockShadowRows.innerHTML, /No matches/);
-assert.match(elements.stockCategories.innerHTML, /3\/4 analyzed/); // Directory stays a whole-watchlist summary.
 ''')
+
+
+def test_category_summary_and_stock_rows_share_one_research_table(tmp_path):
+    page = Path("hybrid/dashboard/index.html").read_text()
+    research = page.split('id="researchPanel"', 1)[1].split('id="advancedPanel"', 1)[0]
+    assert 'id="stockCategories"' not in research
+    assert research.count('<table') == 1
+    run_ui_checks(tmp_path, r'''
+const base = {enabled: false, decisions: [], buy_threshold: .7, sell_threshold: .3,
+  watchlist: WATCHLIST, symbols: SYMBOLS, ranking: RANKING};
+renderStockShadow(base);
+assert.equal((elements.stockShadowRows.innerHTML.match(/class="category-row"/g) || []).length, 11);
+assert.match(elements.stockShadowRows.innerHTML, /<tr class="category-row"[\s\S]*?IT \/ Technology/);
+assert.match(elements.stockShadowRows.innerHTML, /<tr class="category-row"[\s\S]*?ETF benchmarks/);
+''', stock_fixtures())
 
 
 def test_refresh_keeps_focus_when_signal_filter_removes_focused_category(tmp_path):
